@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Leads</title>
+</head>
+<body>
+  <h1>Leads</h1>
+  <form id="leadForm">
+    <p>Name: <input type="text" id="name" required></p>
+    <p>Phone: <input type="text" id="phone"></p>
+    <p>Email: <input type="email" id="email"></p>
+    <p>Notes: <input type="text" id="notes"></p>
+    <p>Follow-up Date: <input type="date" id="follow_up_date"></p>
+    <button type="submit">Add Lead</button>
+  </form>
+
+  <h2>Leads List</h2>
+  <table border="1" id="leadTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Phone</th>
+        <th>Email</th>
+        <th>Notes</th>
+        <th>Follow-up Date</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <p>
+    <a href="index.html">Back to Home</a> |
+    <a href="accounting.html"><button>Go to Accounting Summary</button></a>
+  </p>
+
+  <script>
+    async function loadLeads() {
+      const res = await fetch('/api/leads');
+      const data = await res.json();
+      const tbody = document.querySelector('#leadTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(lead => {
+        const row = `<tr>
+          <td>${lead.id}</td>
+          <td>${lead.name}</td>
+          <td>${lead.phone}</td>
+          <td>${lead.email}</td>
+          <td>${lead.notes}</td>
+          <td>${lead.follow_up_date}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    document.getElementById('leadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('name').value;
+      const phone = document.getElementById('phone').value;
+      const email = document.getElementById('email').value;
+      const notes = document.getElementById('notes').value;
+      const follow_up_date = document.getElementById('follow_up_date').value;
+
+      await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, email, notes, follow_up_date })
+      });
+
+      e.target.reset();
+      loadLeads();
+    });
+
+    loadLeads();
+  </script>
+</body>
+</html>

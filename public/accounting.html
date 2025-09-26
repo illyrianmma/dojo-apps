@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Accounting Summary</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f4f4f4; }
+    .summary { margin-top: 20px; padding: 10px; background: #f9f9f9; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Accounting Summary</h1>
+  <a href="index.html">Back to Home</a>
+
+  <div class="summary">
+    <p><strong>Total Income:</strong> $<span id="totalIncome">0.00</span></p>
+    <p><strong>Total Expenses:</strong> $<span id="totalExpenses">0.00</span></p>
+    <p><strong>Taxable Expenses:</strong> $<span id="taxableExpenses">0.00</span></p>
+    <p><strong>Non-Taxable Expenses:</strong> $<span id="nonTaxableExpenses">0.00</span></p>
+    <p><strong>Net Balance:</strong> $<span id="netBalance">0.00</span></p>
+  </div>
+
+  <h2>Payments</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Student</th><th>Amount</th><th>Date</th><th>Taxable</th>
+      </tr>
+    </thead>
+    <tbody id="paymentList"></tbody>
+  </table>
+
+  <h2>Expenses</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Description</th><th>Amount</th><th>Date</th><th>Taxable</th>
+      </tr>
+    </thead>
+    <tbody id="expenseList"></tbody>
+  </table>
+
+  <script>
+    async function loadAccounting() {
+      let totalIncome = 0, totalExpenses = 0, taxableExpenses = 0, nonTaxableExpenses = 0;
+
+      // Load Payments
+      const payRes = await fetch('/api/payments');
+      const payments = await payRes.json();
+      const payList = document.getElementById('paymentList');
+      payList.innerHTML = '';
+      payments.forEach(p => {
+        totalIncome += p.amount;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${p.id}</td>
+          <td>${p.student_name}</td>
+          <td>${p.amount.toFixed(2)}</td>
+          <td>${p.date}</td>
+          <td>${p.taxable ? 'Yes' : 'No'}</td>
+        `;
+        payList.appendChild(row);
+      });
+
+      // Load Expenses
+      const expRes = await fetch('/api/expenses');
+      const expenses = await expRes.json();
+      const expList = document.getElementById('expenseList');
+      expList.innerHTML = '';
+      expenses.forEach(e => {
+        totalExpenses += e.amount;
+        if (e.taxable) taxableExpenses += e.amount;
+        else nonTaxableExpenses += e.amount;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${e.id}</td>
+          <td>${e.description}</td>
+          <td>${e.amount.toFixed(2)}</td>
+          <td>${e.date}</td>
+          <td>${e.taxable ? 'Yes' : 'No'}</td>
+        `;
+        expList.appendChild(row);
+      });
+
+      // Update summary
+      document.getElementById('totalIncome').textContent = totalIncome.toFixed(2);
+      document.getElementById('totalExpenses').textContent = totalExpenses.toFixed(2);
+      document.getElementById('taxableExpenses').textContent = taxableExpenses.toFixed(2);
+      document.getElementById('nonTaxableExpenses').textContent = nonTaxableExpenses.toFixed(2);
+      document.getElementById('netBalance').textContent = (totalIncome - totalExpenses).toFixed(2);
+    }
+
+    // Refresh every 5 seconds in case data changes (like delete)
+    setInterval(loadAccounting, 5000);
+
+    loadAccounting();
+  </script>
+</body>
+</html>

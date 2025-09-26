@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payments</title>
+</head>
+<body>
+  <h1>Payments</h1>
+  <form id="paymentForm">
+    <p>Student Name: <input type="text" id="student_name" required></p>
+    <p>Amount: <input type="number" step="0.01" id="amount" required></p>
+    <p>Date: <input type="date" id="date" required></p>
+    <p>
+      Taxable:
+      <select id="taxable">
+        <option value="1">Yes</option>
+        <option value="0">No</option>
+      </select>
+    </p>
+    <button type="submit">Add Payment</button>
+  </form>
+
+  <h2>Payment List</h2>
+  <table border="1" id="paymentTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Student</th>
+        <th>Amount</th>
+        <th>Date</th>
+        <th>Taxable</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <p>
+    <a href="index.html">Back to Home</a> |
+    <a href="accounting.html"><button>Go to Accounting Summary</button></a>
+  </p>
+
+  <script>
+    async function loadPayments() {
+      const res = await fetch('/api/payments');
+      const data = await res.json();
+      const tbody = document.querySelector('#paymentTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(pay => {
+        const row = `<tr>
+          <td>${pay.id}</td>
+          <td>${pay.student_name}</td>
+          <td>$${pay.amount.toFixed(2)}</td>
+          <td>${pay.date}</td>
+          <td>${pay.taxable ? 'Yes' : 'No'}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    document.getElementById('paymentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const student_name = document.getElementById('student_name').value;
+      const amount = parseFloat(document.getElementById('amount').value);
+      const date = document.getElementById('date').value;
+      const taxable = parseInt(document.getElementById('taxable').value);
+
+      await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_name, amount, date, taxable })
+      });
+
+      e.target.reset();
+      loadPayments();
+    });
+
+    loadPayments();
+  </script>
+</body>
+</html>

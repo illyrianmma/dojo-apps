@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Students</title>
+  <style>
+    .expired {
+      background-color: #ffcccc; /* light red for expired students */
+    }
+  </style>
+</head>
+<body>
+  <h1>Students</h1>
+  <form id="studentForm">
+    <p>First Name: <input type="text" id="first_name" required></p>
+    <p>Last Name: <input type="text" id="last_name" required></p>
+    <p>Phone: <input type="text" id="phone"></p>
+    <p>Email: <input type="email" id="email"></p>
+    <p>Program: <input type="text" id="program" placeholder="Kickboxing / BJJ / etc."></p>
+    <p>Start Date: <input type="date" id="start_date" required></p>
+    <p>Renewal Date: <input type="date" id="renewal_date" readonly></p>
+    <button type="submit">Add Student</button>
+  </form>
+
+  <h2>Student List</h2>
+  <button id="toggleExpired">Show Expired Only</button>
+  <table border="1" id="studentTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Phone</th>
+        <th>Email</th>
+        <th>Program</th>
+        <th>Start</th>
+        <th>Renewal</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <p>
+    <a href="index.html">Back to Home</a> |
+    <a href="accounting.html"><button>Go to Accounting Summary</button></a>
+  </p>
+
+  <script>
+    let showExpiredOnly = false; // toggle state
+
+    // Auto-fill renewal = start_date + 28 days
+    document.getElementById('start_date').addEventListener('change', () => {
+      const startDate = new Date(document.getElementById('start_date').value);
+      if (!isNaN(startDate)) {
+        const renewalDate = new Date(startDate);
+        renewalDate.setDate(startDate.getDate() + 28);
+        document.getElementById('renewal_date').value = renewalDate.toISOString().split('T')[0];
+      }
+    });
+
+    async function loadStudents() {
+      const res = await fetch('/api/students');
+      const data = await res.json();
+      const tbody = document.querySelector('#studentTable tbody');
+      tbody.innerHTML = '';
+
+      const today = new Date();
+
+      data.forEach(stu => {
+        const renewalDate = new Date(stu.renewal_date);
+        const expired = renewalDate < today;
+
+        if (showExpiredOnly && !expired) return; // skip non-expired if filter active
+
+        const row = `<tr class="${expired ? 'expired' : ''}">
+          <td>${stu.id}</td>
+          <td>${stu.first_name} ${stu.last_name}</td>
+          <td>${stu.phone}</td>
+          <td>${stu.email}</td>
+          <td>${stu.program}</td>
+          <td>${stu.start_date}</td>
+          <td>${stu.renewal_date}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    document.getElementById('studentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const first_name = document.getElementById('first_name').value;
+      const last_name = document.getElementById('last_name').value;
+      const phone = document.getElementById('phone').value;
+      const email = document.getElementById('email').value;
+      const program = document.getElementById('program').value;
+      const start_date = document.getElementById('start_date').value;
+      const renewal_date = document.getElementById('renewal_date').value;
+
+      await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ first_name, last_name, phone, email, program, start_date, renewal_date })
+      });
+
+      e.target.reset();
+      loadStudents();
+    });
+
+    // Toggle expired filter
+    document.getElementById('toggleExpired').addEventListener('click', () => {
+      showExpiredOnly = !showExpiredOnly;
+      document.getElementById('toggleExpired').innerText = showExpiredOnly ? 'Show All Students' : 'Show Expired Only';
+      loadStudents();
+    });
+
+    loadStudents();
+  </script>
+</body>
+</html>
