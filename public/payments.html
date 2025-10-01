@@ -3,78 +3,179 @@
 <head>
   <meta charset="UTF-8">
   <title>Payments</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    label { display:block; margin-top:8px; font-size:14px; }
+    input, select { width:100%; padding:8px; box-sizing:border-box; }
+    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
+    .actions { margin-top:10px; display:flex; gap:8px; }
+    table { width:100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
+    th { background:#f9f9f9; }
+    .msg { margin:8px 0; }
+    .ok{color:#137333} .err{color:#b00020}
+  </style>
 </head>
 <body>
-  <h1>Payments</h1>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Payments</h1>
+    <a href="index.html">← Back to Main Page</a>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
   <form id="paymentForm">
-    <p>Student Name: <input type="text" id="student_name" required></p>
-    <p>Amount: <input type="number" step="0.01" id="amount" required></p>
-    <p>Date: <input type="date" id="date" required></p>
-    <p>
-      Taxable:
-      <select id="taxable">
-        <option value="1">Yes</option>
-        <option value="0">No</option>
-      </select>
-    </p>
-    <button type="submit">Add Payment</button>
+    <div class="row">
+      <div>
+        <label for="student_id">Student</label>
+        <select id="student_id" required></select>
+      </div>
+      <div>
+        <label for="date">Date</label>
+        <input type="date" id="date" required />
+      </div>
+      <div>
+        <label for="amount">Amount</label>
+        <input type="number" id="amount" step="0.01" required />
+      </div>
+      <div>
+        <label for="method">Method</label>
+        <select id="method">
+          <option>Cash</option>
+          <option>Credit</option>
+          <option>Debit</option>
+          <option>Transfer</option>
+        </select>
+      </div>
+      <div>
+        <label for="taxable">Taxable?</label>
+        <select id="taxable">
+          <option value="1">Yes</option>
+          <option value="0" selected>No</option>
+        </select>
+      </div>
+      <div>
+        <label for="note">Note</label>
+        <input id="note" />
+      </div>
+    </div>
+    <div class="actions">
+      <button type="submit">Add Payment</button>
+      <button type="reset">Reset</button>
+    </div>
   </form>
 
-  <h2>Payment List</h2>
-  <table border="1" id="paymentTable">
+  <table id="paymentsTable">
     <thead>
       <tr>
         <th>ID</th>
         <th>Student</th>
-        <th>Amount</th>
         <th>Date</th>
+        <th>Amount</th>
+        <th>Method</th>
         <th>Taxable</th>
+        <th>Note</th>
+        <th>Actions</th>
       </tr>
     </thead>
-    <tbody></tbody>
+    <tbody id="paymentsBody">
+      <tr><td colspan="8">Loading…</td></tr>
+    </tbody>
   </table>
 
-  <p>
-    <a href="index.html">Back to Home</a> |
-    <a href="accounting.html"><button>Go to Accounting Summary</button></a>
-  </p>
+<script>
+const $ = (id)=>document.getElementById(id);
+const msg=(t,ok=false)=>{const m=$('msg');m.className='msg '+(ok?'ok':'err');m.textContent=t;if(ok)setTimeout(()=>{m.textContent='';m.className='msg';},1800);};
 
-  <script>
-    async function loadPayments() {
-      const res = await fetch('/api/payments');
-      const data = await res.json();
-      const tbody = document.querySelector('#paymentTable tbody');
-      tbody.innerHTML = '';
-      data.forEach(pay => {
-        const row = `<tr>
-          <td>${pay.id}</td>
-          <td>${pay.student_name}</td>
-          <td>$${pay.amount.toFixed(2)}</td>
-          <td>${pay.date}</td>
-          <td>${pay.taxable ? 'Yes' : 'No'}</td>
-        </tr>`;
-        tbody.innerHTML += row;
-      });
+// Load students into dropdown
+async function loadStudents(){
+  const sel=$('student_id');
+  sel.innerHTML='<option>Loading…</option>';
+  try{
+    const res=await fetch('/api/students');
+    const data=await res.json();
+    sel.innerHTML='<option value="">Select student…</option>';
+    for(const s of data){
+      const opt=document.createElement('option');
+      opt.value=s.id;
+      opt.textContent=s.name || `Student ${s.id}`;
+      sel.appendChild(opt);
     }
+  }catch(e){sel.innerHTML='<option>(error)</option>';}
+}
 
-    document.getElementById('paymentForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const student_name = document.getElementById('student_name').value;
-      const amount = parseFloat(document.getElementById('amount').value);
-      const date = document.getElementById('date').value;
-      const taxable = parseInt(document.getElementById('taxable').value);
+// Load payments
+async function loadPayments(){
+  const tbody=$('paymentsBody');
+  tbody.innerHTML='<tr><td colspan="8">Loading…</td></tr>';
+  try{
+    const res=await fetch('/api/payments');
+    const data=await res.json();
+    if(!Array.isArray(data)||data.length===0){
+      tbody.innerHTML='<tr><td colspan="8">No payments yet.</td></tr>';return;
+    }
+    tbody.innerHTML='';
+    for(const p of data){
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${p.id}</td>
+        <td>${p.student_name||'?'}</td>
+        <td>${p.date||''}</td>
+        <td>$${Number(p.amount).toFixed(2)}</td>
+        <td>${p.method||''}</td>
+        <td>${p.taxable? 'Yes':'No'}</td>
+        <td>${p.note||''}</td>
+        <td><button class="del" data-id="${p.id}">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }catch(e){tbody.innerHTML=`<tr><td colspan="8" class="err">${e.message}</td></tr>`;}
+}
 
-      await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_name, amount, date, taxable })
-      });
+// Submit payment
+async function submitPayment(e){
+  e.preventDefault();
+  try{
+    const body={
+      student_id:$('student_id').value,
+      date:$('date').value,
+      amount:$('amount').value,
+      method:$('method').value,
+      taxable:$('taxable').value,
+      note:$('note').value
+    };
+    const res=await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const out=await res.json();
+    if(!res.ok) throw new Error(out.error||'Save failed');
+    msg('Payment added.',true);
+    $('paymentForm').reset();
+    await loadPayments();
+  }catch(err){msg(err.message);}
+}
 
-      e.target.reset();
-      loadPayments();
-    });
+// Delete payment
+async function handleDelete(e){
+  if(e.target.classList.contains('del')){
+    const id=e.target.dataset.id;
+    if(!confirm(`Delete payment ${id}?`)) return;
+    try{
+      const res=await fetch(`/api/payments/${id}`,{method:'DELETE'});
+      const out=await res.json();
+      if(!res.ok) throw new Error(out.error||'Delete failed');
+      msg(`Deleted payment ${id}.`,true);
+      await loadPayments();
+    }catch(err){msg(err.message);}
+  }
+}
 
-    loadPayments();
-  </script>
+$('paymentForm').addEventListener('submit', submitPayment);
+$('paymentsTable').addEventListener('click', handleDelete);
+
+loadStudents();
+loadPayments();
+</script>
 </body>
 </html>

@@ -2,103 +2,145 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Accounting Summary</title>
+  <title>Accounting</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { color: #333; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #f4f4f4; }
-    .summary { margin-top: 20px; padding: 10px; background: #f9f9f9; border: 1px solid #ccc; }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    section { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    h2 { margin-top: 0; }
+    table { width:100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border:1px solid #eee; padding:8px; font-size:14px; text-align:left; }
+    th { background:#f9f9f9; }
+    .summary { font-size:16px; font-weight:600; }
+    .net { font-size:18px; font-weight:700; }
+    .ok { color:#137333; }
+    .bad { color:#b00020; }
   </style>
 </head>
 <body>
-  <h1>Accounting Summary</h1>
-  <a href="index.html">Back to Home</a>
-
-  <div class="summary">
-    <p><strong>Total Income:</strong> $<span id="totalIncome">0.00</span></p>
-    <p><strong>Total Expenses:</strong> $<span id="totalExpenses">0.00</span></p>
-    <p><strong>Taxable Expenses:</strong> $<span id="taxableExpenses">0.00</span></p>
-    <p><strong>Non-Taxable Expenses:</strong> $<span id="nonTaxableExpenses">0.00</span></p>
-    <p><strong>Net Balance:</strong> $<span id="netBalance">0.00</span></p>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Accounting</h1>
+    <a href="index.html">← Back to Main Page</a>
   </div>
 
-  <h2>Payments</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Student</th><th>Amount</th><th>Date</th><th>Taxable</th>
-      </tr>
-    </thead>
-    <tbody id="paymentList"></tbody>
-  </table>
+  <section>
+    <h2>Summary</h2>
+    <p class="summary">Total Income: <span id="totalIncome">$0.00</span></p>
+    <p class="summary">Total Expenses: <span id="totalExpenses">$0.00</span></p>
+    <p class="summary">Taxable Expenses: <span id="taxableExpenses">$0.00</span></p>
+    <p class="summary">Non-Taxable Expenses: <span id="nonTaxableExpenses">$0.00</span></p>
+    <p class="net">Net Balance: <span id="netBalance">$0.00</span></p>
+  </section>
 
-  <h2>Expenses</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Description</th><th>Amount</th><th>Date</th><th>Taxable</th>
-      </tr>
-    </thead>
-    <tbody id="expenseList"></tbody>
-  </table>
+  <section>
+    <h2>Income (Payments)</h2>
+    <table id="paymentsTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Student</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Method</th>
+          <th>Taxable</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </section>
 
-  <script>
-    async function loadAccounting() {
-      let totalIncome = 0, totalExpenses = 0, taxableExpenses = 0, nonTaxableExpenses = 0;
+  <section>
+    <h2>Expenses</h2>
+    <table id="expensesTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Vendor</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Category</th>
+          <th>Taxable</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </section>
 
-      // Load Payments
-      const payRes = await fetch('/api/payments');
-      const payments = await payRes.json();
-      const payList = document.getElementById('paymentList');
-      payList.innerHTML = '';
-      payments.forEach(p => {
-        totalIncome += p.amount;
-        const row = document.createElement('tr');
-        row.innerHTML = `
+<script>
+const fmt = (n)=>"$"+Number(n||0).toFixed(2);
+
+async function loadAccounting(){
+  let totalIncome=0, totalExpenses=0, taxableExpenses=0, nonTaxableExpenses=0;
+
+  // Load payments
+  try{
+    const res=await fetch('/api/payments');
+    const payments=await res.json();
+    const tbody=document.querySelector('#paymentsTable tbody');
+    if(payments.length===0){tbody.innerHTML='<tr><td colspan="7">No payments yet.</td></tr>';}
+    else{
+      tbody.innerHTML='';
+      for(const p of payments){
+        totalIncome += Number(p.amount)||0;
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
           <td>${p.id}</td>
-          <td>${p.student_name}</td>
-          <td>${p.amount.toFixed(2)}</td>
-          <td>${p.date}</td>
-          <td>${p.taxable ? 'Yes' : 'No'}</td>
+          <td>${p.student_name||''}</td>
+          <td>${p.date||''}</td>
+          <td>${fmt(p.amount)}</td>
+          <td>${p.method||''}</td>
+          <td>${p.taxable?'Yes':'No'}</td>
+          <td>${p.note||''}</td>
         `;
-        payList.appendChild(row);
-      });
-
-      // Load Expenses
-      const expRes = await fetch('/api/expenses');
-      const expenses = await expRes.json();
-      const expList = document.getElementById('expenseList');
-      expList.innerHTML = '';
-      expenses.forEach(e => {
-        totalExpenses += e.amount;
-        if (e.taxable) taxableExpenses += e.amount;
-        else nonTaxableExpenses += e.amount;
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${e.id}</td>
-          <td>${e.description}</td>
-          <td>${e.amount.toFixed(2)}</td>
-          <td>${e.date}</td>
-          <td>${e.taxable ? 'Yes' : 'No'}</td>
-        `;
-        expList.appendChild(row);
-      });
-
-      // Update summary
-      document.getElementById('totalIncome').textContent = totalIncome.toFixed(2);
-      document.getElementById('totalExpenses').textContent = totalExpenses.toFixed(2);
-      document.getElementById('taxableExpenses').textContent = taxableExpenses.toFixed(2);
-      document.getElementById('nonTaxableExpenses').textContent = nonTaxableExpenses.toFixed(2);
-      document.getElementById('netBalance').textContent = (totalIncome - totalExpenses).toFixed(2);
+        tbody.appendChild(tr);
+      }
     }
+  }catch(e){console.error('Payments load failed',e);}
 
-    // Refresh every 5 seconds in case data changes (like delete)
-    setInterval(loadAccounting, 5000);
+  // Load expenses
+  try{
+    const res=await fetch('/api/expenses');
+    const expenses=await res.json();
+    const tbody=document.querySelector('#expensesTable tbody');
+    if(expenses.length===0){tbody.innerHTML='<tr><td colspan="7">No expenses yet.</td></tr>';}
+    else{
+      tbody.innerHTML='';
+      for(const ex of expenses){
+        totalExpenses += Number(ex.amount)||0;
+        if(ex.taxable){ taxableExpenses += Number(ex.amount)||0; }
+        else{ nonTaxableExpenses += Number(ex.amount)||0; }
 
-    loadAccounting();
-  </script>
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
+          <td>${ex.id}</td>
+          <td>${ex.vendor||''}</td>
+          <td>${ex.date||''}</td>
+          <td>${fmt(ex.amount)}</td>
+          <td>${ex.category||''}</td>
+          <td>${ex.taxable?'Yes':'No'}</td>
+          <td>${ex.note||''}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+  }catch(e){console.error('Expenses load failed',e);}
+
+  // Update summary
+  document.getElementById('totalIncome').textContent=fmt(totalIncome);
+  document.getElementById('totalExpenses').textContent=fmt(totalExpenses);
+  document.getElementById('taxableExpenses').textContent=fmt(taxableExpenses);
+  document.getElementById('nonTaxableExpenses').textContent=fmt(nonTaxableExpenses);
+
+  const net=totalIncome-totalExpenses;
+  const netEl=document.getElementById('netBalance');
+  netEl.textContent=fmt(net);
+  netEl.className= net>=0 ? 'ok' : 'bad';
+}
+
+loadAccounting();
+</script>
 </body>
 </html>

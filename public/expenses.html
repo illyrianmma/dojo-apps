@@ -4,87 +4,110 @@
   <meta charset="UTF-8">
   <title>Expenses</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { color: #333; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #f4f4f4; }
-    button { padding: 4px 8px; cursor: pointer; }
+    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+    input { margin: 0.25rem; }
+    #err { color:#b00020; }
   </style>
 </head>
 <body>
   <h1>Expenses</h1>
-  <a href="index.html">Back to Home</a>
+  <div id="err"></div>
+  <p><a href="index.html">Back to Main Page</a></p>
 
-  <h2>Add Expense</h2>
-  <form id="expenseForm">
-    <input type="text" id="description" placeholder="Description" required>
-    <input type="number" step="0.01" id="amount" placeholder="Amount" required>
-    <input type="date" id="date" required>
-    <label>
-      <input type="checkbox" id="taxable"> Taxable
-    </label>
-    <button type="submit">Add Expense</button>
+  <form id="expForm">
+    <input type="hidden" id="exp_id">
+    <input type="text" id="exp_vendor" placeholder="Vendor" required>
+    <input type="number" id="exp_amount" placeholder="Amount" step="0.01" required>
+    <label><input type="checkbox" id="exp_taxable"> Taxable</label>
+    <input type="date" id="exp_date">
+    <input type="text" id="exp_category" placeholder="Category">
+    <input type="text" id="exp_note" placeholder="Note">
+    <button type="submit">Save Expense</button>
+    <button type="button" id="exp_reset">Reset</button>
   </form>
 
-  <h2>Expense List</h2>
   <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Description</th>
-        <th>Amount</th>
-        <th>Date</th>
-        <th>Taxable</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="expenseList"></tbody>
+    <thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Taxable</th><th>Note</th><th>Actions</th></tr></thead>
+    <tbody id="exp_list"></tbody>
   </table>
 
   <script>
+    const err = document.getElementById('err'); function showError(m){ err.textContent=m; setTimeout(()=>err.textContent='',5000); }
+    const expForm = document.getElementById('expForm');
+    const expId = document.getElementById('exp_id');
+    const expDate = document.getElementById('exp_date');
+    const expList = document.getElementById('exp_list');
+    const expReset = document.getElementById('exp_reset');
+
+    function today(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+    function resetForm(){ expForm.reset(); expId.value=''; expDate.value = today(); }
+
     async function loadExpenses() {
-      const res = await fetch('/api/expenses');
-      const data = await res.json();
-      const list = document.getElementById('expenseList');
-      list.innerHTML = '';
-      data.forEach(exp => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${exp.id}</td>
-          <td>${exp.description}</td>
-          <td>${exp.amount}</td>
-          <td>${exp.date}</td>
-          <td>${exp.taxable ? 'Yes' : 'No'}</td>
-          <td><button onclick="deleteExpense(${exp.id})">Delete</button></td>
+      const res = await fetch('/api/expenses'); if (!res.ok) { showError('Load failed'); return; }
+      const rows = await res.json();
+      expList.innerHTML = '';
+      rows.forEach(x => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${x.date}</td>
+          <td>${x.vendor || ''}</td>
+          <td>${x.category || ''}</td>
+          <td>$${Number(x.amount).toFixed(2)}</td>
+          <td>${x.taxable ? 'Yes' : 'No'}</td>
+          <td>${x.note || ''}</td>
+          <td>
+            <button data-id="${x.id}" class="edit">Edit</button>
+            <button data-id="${x.id}" class="del">Delete</button>
+          </td>
         `;
-        list.appendChild(row);
+        expList.appendChild(tr);
+      });
+      expList.querySelectorAll('button.edit').forEach(b => b.onclick = () => editExpense(b.dataset.id, rows));
+      expList.querySelectorAll('button.del').forEach(b => {
+        b.onclick = async () => {
+          const res2 = await fetch(`/api/expenses/${b.dataset.id}`, { method: 'DELETE' });
+          if (!res2.ok) return showError('Delete failed');
+          loadExpenses();
+        };
       });
     }
 
-    document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+    function editExpense(id, rows) {
+      const x = rows.find(r => String(r.id) === String(id));
+      if (!x) return;
+      expId.value = x.id;
+      document.getElementById('exp_vendor').value = x.vendor || '';
+      document.getElementById('exp_amount').value = x.amount;
+      document.getElementById('exp_taxable').checked = !!x.taxable;
+      expDate.value = x.date;
+      document.getElementById('exp_category').value = x.category || '';
+      document.getElementById('exp_note').value = x.note || '';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    expForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const expense = {
-        description: document.getElementById('description').value,
-        amount: parseFloat(document.getElementById('amount').value),
-        date: document.getElementById('date').value,
-        taxable: document.getElementById('taxable').checked
+      const payload = {
+        vendor: document.getElementById('exp_vendor').value.trim(),
+        amount: Number(document.getElementById('exp_amount').value),
+        taxable: document.getElementById('exp_taxable').checked,
+        date: expDate.value || null,
+        category: document.getElementById('exp_category').value.trim(),
+        note: document.getElementById('exp_note').value.trim()
       };
-      await fetch('/api/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(expense)
+      if (isNaN(payload.amount)) return showError('Amount must be a number');
+      const id = expId.value;
+      const res = await fetch(id ? `/api/expenses/${id}` : '/api/expenses', {
+        method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
-      e.target.reset();
-      loadExpenses();
+      if (!res.ok) return showError('Save failed');
+      resetForm(); loadExpenses();
     });
 
-    async function deleteExpense(id) {
-      await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
-      loadExpenses();
-    }
-
-    loadExpenses();
+    expReset.onclick = resetForm;
+    resetForm(); loadExpenses();
   </script>
 </body>
 </html>

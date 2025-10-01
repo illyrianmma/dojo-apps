@@ -1,117 +1,268 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Students</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    .expired {
-      background-color: #ffcccc; /* light red for expired students */
-    }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    label { display:block; margin-top:8px; font-size:14px; }
+    input, select { width:100%; padding:8px; box-sizing:border-box; }
+    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
+    .actions { margin-top:10px; display:flex; gap:8px; }
+    table { width:100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
+    th { background:#f9f9f9; }
+    img.thumb { width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #ddd; }
+    .msg { margin:8px 0; }
+    .ok{color:#137333} .err{color:#b00020}
+    .editing { background:#fff7e6; }
   </style>
 </head>
 <body>
-  <h1>Students</h1>
-  <form id="studentForm">
-    <p>First Name: <input type="text" id="first_name" required></p>
-    <p>Last Name: <input type="text" id="last_name" required></p>
-    <p>Phone: <input type="text" id="phone"></p>
-    <p>Email: <input type="email" id="email"></p>
-    <p>Program: <input type="text" id="program" placeholder="Kickboxing / BJJ / etc."></p>
-    <p>Start Date: <input type="date" id="start_date" required></p>
-    <p>Renewal Date: <input type="date" id="renewal_date" readonly></p>
-    <button type="submit">Add Student</button>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Students</h1>
+    <a href="index.html">← Back to Main Page</a>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <form id="studentForm" enctype="multipart/form-data">
+    <div class="row">
+      <div>
+        <label for="first_name">First Name</label>
+        <input id="first_name" required />
+      </div>
+      <div>
+        <label for="last_name">Last Name</label>
+        <input id="last_name" required />
+      </div>
+
+      <div>
+        <label for="phone">Phone</label>
+        <input id="phone" />
+      </div>
+      <div>
+        <label for="email">Email</label>
+        <input id="email" type="email" />
+      </div>
+
+      <div>
+        <label for="address">Address</label>
+        <input id="address" />
+      </div>
+      <div>
+        <label for="age">Age</label>
+        <input id="age" type="number" />
+      </div>
+
+      <div>
+        <label for="program">Program</label>
+        <input id="program" />
+      </div>
+      <div>
+        <label for="start_date">Start Date</label>
+        <input id="start_date" type="date" />
+      </div>
+
+      <div>
+        <label for="renewal_date">Renewal Date</label>
+        <input id="renewal_date" type="date" />
+      </div>
+      <div>
+        <label for="parent_name">Parent Name (if minor)</label>
+        <input id="parent_name" />
+      </div>
+
+      <div>
+        <label for="parent_phone">Parent Phone</label>
+        <input id="parent_phone" />
+      </div>
+      <div>
+        <label for="notes">Notes</label>
+        <input id="notes" />
+      </div>
+
+      <div>
+        <label for="photo">Photo</label>
+        <input id="photo" type="file" accept="image/*" />
+        <img id="preview" class="thumb" alt="Preview" style="display:none; margin-top:6px;" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" id="saveBtn">Save Student</button>
+      <button type="button" id="cancelEditBtn" style="display:none;">Cancel Edit</button>
+      <button type="reset">Reset</button>
+    </div>
   </form>
 
-  <h2>Student List</h2>
-  <button id="toggleExpired">Show Expired Only</button>
-  <table border="1" id="studentTable">
+  <table id="studentsTable">
     <thead>
       <tr>
-        <th>ID</th>
+        <th>Photo</th>
         <th>Name</th>
-        <th>Phone</th>
-        <th>Email</th>
+        <th>Contacts</th>
         <th>Program</th>
         <th>Start</th>
         <th>Renewal</th>
+        <th>Actions</th>
       </tr>
     </thead>
-    <tbody></tbody>
+    <tbody id="studentsBody">
+      <tr><td colspan="7">Loading…</td></tr>
+    </tbody>
   </table>
 
-  <p>
-    <a href="index.html">Back to Home</a> |
-    <a href="accounting.html"><button>Go to Accounting Summary</button></a>
-  </p>
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = (t, ok=false) => { const m=$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok)setTimeout(()=>{m.textContent='';m.className='msg';},1800); };
 
-  <script>
-    let showExpiredOnly = false; // toggle state
+$('photo').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) { $('preview').style.display='none'; return; }
+  $('preview').src = URL.createObjectURL(f);
+  $('preview').style.display = 'inline-block';
+});
 
-    // Auto-fill renewal = start_date + 28 days
-    document.getElementById('start_date').addEventListener('change', () => {
-      const startDate = new Date(document.getElementById('start_date').value);
-      if (!isNaN(startDate)) {
-        const renewalDate = new Date(startDate);
-        renewalDate.setDate(startDate.getDate() + 28);
-        document.getElementById('renewal_date').value = renewalDate.toISOString().split('T')[0];
-      }
-    });
+function setEditing(id, s){
+  $('studentForm').dataset.editId = id;
+  $('saveBtn').textContent = 'Update Student';
+  $('cancelEditBtn').style.display = 'inline-block';
+  $('studentForm').classList.add('editing');
 
-    async function loadStudents() {
-      const res = await fetch('/api/students');
-      const data = await res.json();
-      const tbody = document.querySelector('#studentTable tbody');
-      tbody.innerHTML = '';
+  // Split name into first + last
+  const parts = (s.name || '').trim().split(/\s+/);
+  const first = parts.shift() || '';
+  const last = parts.join(' ');
 
-      const today = new Date();
+  $('first_name').value = first;
+  $('last_name').value = last;
+  $('phone').value = s.phone || '';
+  $('email').value = s.email || '';
+  $('address').value = s.address || '';
+  $('age').value = s.age || '';
+  $('program').value = s.program || '';
+  $('start_date').value = s.start_date || '';
+  $('renewal_date').value = s.renewal_date || '';
+  $('parent_name').value = s.parent_name || '';
+  $('parent_phone').value = s.parent_phone || '';
+  $('notes').value = s.notes || '';
 
-      data.forEach(stu => {
-        const renewalDate = new Date(stu.renewal_date);
-        const expired = renewalDate < today;
+  if (s.photo) {
+    $('preview').src = s.photo;
+    $('preview').style.display = 'inline-block';
+  } else {
+    $('preview').style.display = 'none';
+  }
+}
 
-        if (showExpiredOnly && !expired) return; // skip non-expired if filter active
+function clearEditing(){
+  delete $('studentForm').dataset.editId;
+  $('saveBtn').textContent = 'Save Student';
+  $('cancelEditBtn').style.display = 'none';
+  $('studentForm').classList.remove('editing');
+  $('studentForm').reset();
+  $('preview').style.display='none';
+}
 
-        const row = `<tr class="${expired ? 'expired' : ''}">
-          <td>${stu.id}</td>
-          <td>${stu.first_name} ${stu.last_name}</td>
-          <td>${stu.phone}</td>
-          <td>${stu.email}</td>
-          <td>${stu.program}</td>
-          <td>${stu.start_date}</td>
-          <td>${stu.renewal_date}</td>
-        </tr>`;
-        tbody.innerHTML += row;
-      });
+$('cancelEditBtn').addEventListener('click', clearEditing);
+
+async function loadStudents() {
+  const tbody = $('studentsBody');
+  tbody.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
+  try {
+    const res = await fetch('/api/students');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7">No students yet.</td></tr>';
+      return;
     }
+    tbody.innerHTML = '';
+    for (const s of data) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${s.photo ? `<img class="thumb" src="${s.photo}">` : '—'}</td>
+        <td>${s.name || ''}</td>
+        <td>${[s.phone, s.email].filter(Boolean).join('<br>')}</td>
+        <td>${s.program || ''}</td>
+        <td>${s.start_date || ''}</td>
+        <td>${s.renewal_date || ''}</td>
+        <td>
+          <button data-id="${s.id}" class="edit">Edit</button>
+          <button data-id="${s.id}" class="del">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="err">Error: ${e.message}</td></tr>`;
+  }
+}
 
-    document.getElementById('studentForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const first_name = document.getElementById('first_name').value;
-      const last_name = document.getElementById('last_name').value;
-      const phone = document.getElementById('phone').value;
-      const email = document.getElementById('email').value;
-      const program = document.getElementById('program').value;
-      const start_date = document.getElementById('start_date').value;
-      const renewal_date = document.getElementById('renewal_date').value;
+async function submitStudent(e) {
+  e.preventDefault();
+  try {
+    const fd = new FormData();
+    fd.append('first_name', $('first_name').value);
+    fd.append('last_name', $('last_name').value);
+    fd.append('phone', $('phone').value);
+    fd.append('email', $('email').value);
+    fd.append('address', $('address').value);
+    fd.append('age', $('age').value);
+    fd.append('program', $('program').value);
+    fd.append('start_date', $('start_date').value);
+    fd.append('renewal_date', $('renewal_date').value);
+    fd.append('parent_name', $('parent_name').value);
+    fd.append('parent_phone', $('parent_phone').value);
+    fd.append('notes', $('notes').value);
+    if ($('photo').files[0]) fd.append('photo', $('photo').files[0]);
 
-      await fetch('/api/students', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ first_name, last_name, phone, email, program, start_date, renewal_date })
-      });
+    const editId = $('studentForm').dataset.editId;
+    const url = editId ? `/api/students/${editId}` : '/api/students';
+    const method = editId ? 'PUT' : 'POST';
 
-      e.target.reset();
-      loadStudents();
-    });
+    const res = await fetch(url, { method, body: fd });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || 'Save failed');
 
-    // Toggle expired filter
-    document.getElementById('toggleExpired').addEventListener('click', () => {
-      showExpiredOnly = !showExpiredOnly;
-      document.getElementById('toggleExpired').innerText = showExpiredOnly ? 'Show All Students' : 'Show Expired Only';
-      loadStudents();
-    });
+    msg(editId ? 'Student updated.' : 'Student saved.', true);
+    clearEditing();
+    await loadStudents();
+  } catch (e) { msg(e.message); }
+}
 
-    loadStudents();
-  </script>
+async function handleTableClick(e) {
+  const id = e.target.dataset.id;
+  if (!id) return;
+
+  if (e.target.classList.contains('del')) {
+    if (!confirm(`Delete student ${id}?`)) return;
+    try {
+      const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Delete failed');
+      msg(`Deleted student ${id}.`, true);
+      await loadStudents();
+    } catch (e) { msg(e.message); }
+  }
+
+  if (e.target.classList.contains('edit')) {
+    try {
+      const res = await fetch('/api/students');
+      const all = await res.json();
+      const s = all.find(x => String(x.id) === String(id));
+      if (!s) return msg('Student not found');
+      setEditing(id, s);
+    } catch (err) { msg(err.message); }
+  }
+}
+
+$('studentForm').addEventListener('submit', submitStudent);
+$('studentsTable').addEventListener('click', handleTableClick);
+loadStudents();
+</script>
 </body>
 </html>

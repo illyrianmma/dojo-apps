@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Attendance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    h1 { margin-bottom: 8px; }
+    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    label { display:block; margin-top:8px; font-size:14px; }
+    select, input { width:100%; padding:8px; box-sizing:border-box; }
+    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
+    .actions { margin-top:10px; display:flex; gap:8px; }
+    table { width:100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
+    th { background:#f9f9f9; }
+    .msg { margin:8px 0; }
+    .ok{color:#137333} .err{color:#b00020}
+  </style>
+</head>
+<body>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Attendance</h1>
+    <a href="index.html">← Back to Main Page</a>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <form id="attendanceForm">
+    <div class="row">
+      <div>
+        <label for="student_id">Student</label>
+        <select id="student_id" required></select>
+      </div>
+      <div>
+        <label for="date">Date</label>
+        <input type="date" id="date" required />
+      </div>
+      <div>
+        <label for="present">Status</label>
+        <select id="present">
+          <option value="1">Present</option>
+          <option value="0">Absent</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="submit">Mark Attendance</button>
+      <button type="reset">Reset</button>
+    </div>
+  </form>
+
+  <table id="attendanceTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Student</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="attendanceBody">
+      <tr><td colspan="5">Loading…</td></tr>
+    </tbody>
+  </table>
+
+<script>
+function $(id){ return document.getElementById(id); }
+function msg(text, ok){
+  var m = $('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+  if (ok) setTimeout(function(){ m.textContent=''; m.className='msg'; }, 2000);
+}
+function setToday(){
+  var d = new Date();
+  $('date').value = d.toISOString().slice(0,10);
+}
+
+async function loadStudents(){
+  var sel = $('student_id');
+  sel.innerHTML = '<option>Loading…</option>';
+  try{
+    var res = await fetch('/api/students');
+    var data = await res.json();
+    if (!Array.isArray(data) || data.length === 0){
+      sel.innerHTML = '<option value="">(no students yet)</option>';
+      return;
+    }
+    sel.innerHTML = '';
+    for (var i=0;i<data.length;i++){
+      var s = data[i];
+      var opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name || ('Student ' + s.id);
+      sel.appendChild(opt);
+    }
+  }catch(e){
+    sel.innerHTML = '<option value="">(error loading students)</option>';
+  }
+}
+
+async function loadAttendance(){
+  var tbody = $('attendanceBody');
+  tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+  try{
+    var res = await fetch('/api/attendance');
+    var data = await res.json();
+    if (!Array.isArray(data) || data.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5">No records yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    for (var i=0;i<data.length;i++){
+      var r = data[i];
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + r.id + '</td>' +
+        '<td>' + (r.student_name || ('ID ' + r.student_id)) + '</td>' +
+        '<td>' + (r.date || '') + '</td>' +
+        '<td>' + (Number(r.present) ? 'Present' : 'Absent') + '</td>' +
+        '<td><button class="del" data-id="' + r.id + '">Delete</button></td>';
+      tbody.appendChild(tr);
+    }
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="5" class="err">' + e.message + '</td></tr>';
+  }
+}
+
+async function submitAttendance(e){
+  e.preventDefault();
+  var student_id = $('student_id').value;
+  if (!student_id){ msg('Please select a student.'); return; }
+
+  try{
+    var body = {
+      student_id: student_id,
+      date: $('date').value || new Date().toISOString().slice(0,10),
+      present: $('present').value
+    };
+    var res = await fetch('/api/attendance', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    var out = await res.json();
+    if (!res.ok) throw new Error(out.error || 'Save failed');
+
+    msg('Attendance saved.', true);
+    $('attendanceForm').reset();
+    setToday();
+    await loadAttendance();
+  }catch(err){
+    msg(err.message);
+  }
+}
+
+async function handleDelete(e){
+  if (e.target.classList.contains('del')){
+    var id = e.target.getAttribute('data-id');
+    if (!confirm('Delete record ' + id + '?')) return;
+    try{
+      var res = await fetch('/api/attendance/' + id, { method: 'DELETE' });
+      var out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Delete failed');
+      msg('Deleted record ' + id + '.', true);
+      await loadAttendance();
+    }catch(err){ msg(err.message); }
+  }
+}
+
+$('attendanceForm').addEventListener('submit', submitAttendance);
+$('attendanceTable').addEventListener('click', handleDelete);
+
+setToday();
+loadStudents();
+loadAttendance();
+</script>
+</body>
+</html>

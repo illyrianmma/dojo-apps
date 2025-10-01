@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Attendance</title>
+<style>
+  body{font-family:Arial, sans-serif;max-width:900px;margin:24px auto}
+  form input, form select{display:block;margin:6px 0;padding:10px;font-size:16px;width:100%}
+  button{padding:12px 18px;font-size:18px}
+  .stamp{margin-top:8px;color:#555}
+</style></head>
+<body>
+  <a href="index.html">⬅ Back</a>
+  <h1>Attendance</h1>
+  <form id="f">
+    <input id="student_id" type="number" min="1" placeholder="Student ID" required>
+    <input id="date" type="date" required>
+    <select id="status"><option>Present</option><option>Absent</option></select>
+    <button type="submit">✅ Mark Attendance</button>
+    <button type="button" id="refresh">🔄 Refresh List</button>
+  </form>
+  <h3>Records</h3>
+  <ul id="list"></ul>
+  <div class="stamp">BUILD: 2025-09-29 12:55 (attendance)</div>
+<script>
+const f=document.getElementById('f'); const refresh=document.getElementById('refresh');
+f.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const data={student_id:+f.student_id.value, date:f.date.value, status:f.status.value};
+  await fetch('/api/attendance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  f.reset(); load();
+});
+refresh.addEventListener('click', load);
+async function load(){
+  const res=await fetch('/api/attendance'); const rows=await res.json();
+  document.getElementById('list').innerHTML=rows.map(r=>`<li>#${r.id} — Student ${r.student_id} — ${r.date} — ${r.status}</li>`).join('');
+}
+load();
+</script>
+</body></html>
