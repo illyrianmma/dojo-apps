@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -o errexit
+set -e
 
-npm install
-npm rebuild sqlite3 --build-from-source
+# Ensure fresh build of sqlite3
+npm install --build-from-source sqlite3
