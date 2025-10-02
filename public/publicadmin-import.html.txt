@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Admin Import</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>body{font-family:system-ui,Arial,sans-serif;max-width:700px;margin:40px auto;padding:0 16px;}input,button{padding:8px;margin:6px 0;width:100%}fieldset{margin:18px 0;padding:12px}</style>
+</head>
+<body>
+  <h1>Admin Import</h1>
+  <p>Enter your Admin Token, then upload your local DB and your uploads ZIP.</p>
+
+  <label>Admin Token</label>
+  <input type="password" id="token" placeholder="ADMIN_TOKEN" />
+
+  <fieldset>
+    <legend>1) Replace Database</legend>
+    <input type="file" id="dbfile" accept=".db,.sqlite" />
+    <button onclick="sendDb()">Upload DB</button>
+    <div id="dbmsg"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>2) Upload Photos (ZIP)</legend>
+    <input type="file" id="zipfile" accept=".zip" />
+    <button onclick="sendZip()">Upload ZIP</button>
+    <div id="zipmsg"></div>
+  </fieldset>
+
+  <script>
+    async function sendDb(){
+      const t=document.getElementById('token').value.trim();
+      const f=document.getElementById('dbfile').files[0];
+      if(!t||!f){document.getElementById('dbmsg').textContent='Token and DB file required';return;}
+      const fd=new FormData(); fd.append('file', f);
+      const res=await fetch('/admin/replace-db', { method:'POST', headers:{'x-admin-token':t}, body:fd });
+      const out=await res.json();
+      document.getElementById('dbmsg').textContent = res.ok ? 'DB uploaded: '+(out.message||'ok') : 'Error: '+(out.error||res.status);
+    }
+    async function sendZip(){
+      const t=document.getElementById('token').value.trim();
+      const f=document.getElementById('zipfile').files[0];
+      if(!t||!f){document.getElementById('zipmsg').textContent='Token and ZIP required';return;}
+      const fd=new FormData(); fd.append('zip', f);
+      const res=await fetch('/admin/upload-uploads-zip', { method:'POST', headers:{'x-admin-token':t}, body:fd });
+      const out=await res.json();
+      document.getElementById('zipmsg').textContent = res.ok ? 'ZIP uploaded: '+(out.message||'ok') : 'Error: '+(out.error||res.status);
+    }
+  </script>
+</body>
+</html>

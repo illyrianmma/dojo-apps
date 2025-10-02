@@ -3,18 +3,23 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const AdmZip = require("adm-zip");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set in Render for import
+
 // -------------------------------
-// Persistent data dir (Render Disk)
+// Persistent data dir (Render Disk or local)
 // -------------------------------
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const dbFile = path.join(DATA_DIR, "dojo.db");
 const uploadsDir = path.join(DATA_DIR, "uploads");
+const tmpDir = path.join(DATA_DIR, "tmp");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
 // -------------------------------
 // Parsers & static
@@ -22,33 +27,58 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Serve frontend from /public (disable caching during development)
+// Serve frontend from /public (disable caching while iterating)
 app.use(express.static(path.join(__dirname, "public"), { maxAge: 0, etag: false }));
 
 // Serve uploaded photos from the persistent disk
 app.use("/uploads", express.static(uploadsDir));
 
+// Friendly routes / redirects so .htm and extensionless work
+const PAGES = ["index","students","payments","attendance","leads","expenses","accounting"];
+app.get("/", (req,res) => res.redirect("/index.html"));
+PAGES.forEach(name => {
+  app.get("/" + name, (req,res) =>
+    res.sendFile(path.join(__dirname, "public", `${name}.html`))
+  );
+  app.get("/" + name + ".htm", (req,res) => res.redirect("/" + name + ".html"));
+});
+
 // -------------------------------
 // Multer (photo uploads -> persistent disk)
 // -------------------------------
-const storage = multer.diskStorage({
+const photoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
     cb(null, Date.now() + "_" + safe);
   },
 });
-const fileFilter = (req, file, cb) => (/^image\//.test(file.mimetype) ? cb(null, true) : cb(new Error("Only image files")));
-const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+const imageFilter = (req, file, cb) =>
+  (/^image\//.test(file.mimetype) ? cb(null, true) : cb(new Error("Only image files")));
+const uploadPhoto = multer({ storage: photoStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Separate multer for admin file uploads (DB or ZIP → tmp)
+const fileStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, tmpDir),
+  filename: (req, file, cb) => {
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    cb(null, Date.now() + "_" + safe);
+  },
+});
+const uploadAny = multer({ storage: fileStorage, limits: { fileSize: 200 * 1024 * 1024 } }); // up to 200MB
 
 // -------------------------------
-// Database
+// Database open/close helpers
 // -------------------------------
-const db = new sqlite3.Database(dbFile, (err) => {
-  if (err) console.error("Error opening database:", err.message);
-  else console.log("Connected to SQLite database:", dbFile);
-});
-db.exec("PRAGMA foreign_keys = ON;");
+let db;
+function openDb() {
+  db = new sqlite3.Database(dbFile, (err) => {
+    if (err) console.error("Error opening database:", err.message);
+    else console.log("Connected to SQLite database:", dbFile);
+  });
+  db.exec("PRAGMA foreign_keys = ON;");
+}
+openDb();
 
 // -------------------------------
 // Schema
@@ -127,7 +157,7 @@ function todayISO() {
 // Health
 // -------------------------------
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, data_dir: DATA_DIR, port: PORT });
+  res.json({ ok: true, data_dir: DATA_DIR, port: PORT, has_admin: !!ADMIN_TOKEN });
 });
 
 // -------------------------------
@@ -154,7 +184,7 @@ app.get("/api/students/due", (req, res) => {
 });
 
 // Create student
-app.post("/api/students", upload.single("photo"), (req, res) => {
+app.post("/api/students", uploadPhoto.single("photo"), (req, res) => {
   let {
     name, first_name, last_name, phone, email, address, age,
     program, start_date, renewal_date, parent_name, parent_phone, notes
@@ -181,7 +211,7 @@ app.post("/api/students", upload.single("photo"), (req, res) => {
 });
 
 // Update student
-app.put("/api/students/:id", upload.single("photo"), (req, res) => {
+app.put("/api/students/:id", uploadPhoto.single("photo"), (req, res) => {
   let {
     name, first_name, last_name, phone, email, address, age,
     program, start_date, renewal_date, parent_name, parent_phone, notes
@@ -359,6 +389,53 @@ app.delete("/api/attendance/:id", (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ deleted: this.changes });
   });
+});
+
+// -------------------------------
+// ADMIN IMPORT (one-time)
+// -------------------------------
+function checkAdmin(req, res) {
+  const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
+  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
+// Replace DB file safely
+app.post("/admin/replace-db", uploadAny.single("file"), (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const tempPath = req.file.path;
+  // Close DB, swap file, reopen
+  db.close((err) => {
+    if (err) return res.status(500).json({ error: "Close DB error: " + err.message });
+    try {
+      fs.copyFileSync(tempPath, dbFile);
+      fs.unlinkSync(tempPath);
+    } catch (e) {
+      return res.status(500).json({ error: "Copy DB error: " + e.message });
+    }
+    openDb();
+    res.json({ ok: true, message: "Database replaced" });
+  });
+});
+
+// Upload ZIP of uploads/ and extract
+app.post("/admin/upload-uploads-zip", uploadAny.single("zip"), (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  if (!req.file) return res.status(400).json({ error: "No zip uploaded" });
+
+  try {
+    const zip = new AdmZip(req.file.path);
+    zip.extractAllTo(uploadsDir, true);
+    fs.unlinkSync(req.file.path);
+    res.json({ ok: true, message: "Uploads extracted to " + uploadsDir });
+  } catch (e) {
+    res.status(500).json({ error: "Unzip failed: " + e.message });
+  }
 });
 
 // -------------------------------
