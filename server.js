@@ -1,3 +1,4 @@
+// server.js (complete)
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
@@ -5,10 +6,24 @@ const fs = require("fs");
 const multer = require("multer");
 const AdmZip = require("adm-zip");
 
+// optional mail/SMS libs (safe if env not set)
+let sgMail = null, twilioClient = null;
+if (process.env.SENDGRID_API_KEY) {
+  try {
+    sgMail = require("@sendgrid/mail");
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  } catch {}
+}
+if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
+  try {
+    const twilio = require("twilio");
+    twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+  } catch {}
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set in Render for import
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set in Render → Environment
 
 // -------------------------------
 // Persistent data dir (Render Disk or local)
@@ -26,15 +41,11 @@ if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 // -------------------------------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Serve frontend from /public (disable caching while iterating)
 app.use(express.static(path.join(__dirname, "public"), { maxAge: 0, etag: false }));
-
-// Serve uploaded photos from the persistent disk
 app.use("/uploads", express.static(uploadsDir));
 
 // Friendly routes / redirects so .htm and extensionless work
-const PAGES = ["index","students","payments","attendance","leads","expenses","accounting"];
+const PAGES = ["index","students","payments","attendance","leads","expenses","accounting","admin-tools","admin-import"];
 app.get("/", (req,res) => res.redirect("/index.html"));
 PAGES.forEach(name => {
   app.get("/" + name, (req,res) =>
@@ -68,21 +79,15 @@ const fileStorage = multer.diskStorage({
 const uploadAny = multer({ storage: fileStorage, limits: { fileSize: 200 * 1024 * 1024 } }); // up to 200MB
 
 // -------------------------------
-// Database open/close helpers
+// Database helpers
 // -------------------------------
-let db;
-function openDb() {
-  db = new sqlite3.Database(dbFile, (err) => {
-    if (err) console.error("Error opening database:", err.message);
-    else console.log("Connected to SQLite database:", dbFile);
-  });
-  db.exec("PRAGMA foreign_keys = ON;");
-}
-openDb();
+const db = new sqlite3.Database(dbFile, (err) => {
+  if (err) console.error("Error opening database:", err.message);
+  else console.log("Connected to SQLite database:", dbFile);
+});
+db.exec("PRAGMA foreign_keys = ON;");
 
-// -------------------------------
-// Schema
-// -------------------------------
+// Schema + simple auto-migrations
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +104,6 @@ db.serialize(() => {
     notes TEXT,
     photo TEXT
   )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER,
@@ -107,7 +111,6 @@ db.serialize(() => {
     present INTEGER,
     FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
   )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER,
@@ -118,7 +121,6 @@ db.serialize(() => {
     note TEXT,
     FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
   )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     vendor TEXT,
@@ -128,7 +130,6 @@ db.serialize(() => {
     category TEXT,
     note TEXT
   )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
@@ -137,20 +138,57 @@ db.serialize(() => {
     interested_program TEXT,
     follow_up_date TEXT,
     status TEXT,
-    notes TEXT
+    notes TEXT,
+    created_at TEXT
   )`);
 });
 
 // -------------------------------
 // Helpers
 // -------------------------------
-function addDays(date, days) {
-  const d = new Date(date);
+function addDays(dateISO, days) {
+  const d = new Date(dateISO);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function cmpDays(aISO, bISO) {
+  return Math.floor((new Date(aISO) - new Date(bISO)) / 86400000);
+}
+
+// mail & sms (no-op if not configured)
+async function sendEmail(to, subject, text) {
+  if (!sgMail || !process.env.SENDGRID_FROM) {
+    console.log(`[email disabled] would send to ${to}: ${subject}`);
+    return { ok: false, skipped: true };
+  }
+  try {
+    await sgMail.send({ to, from: process.env.SENDGRID_FROM, subject, text });
+    return { ok: true };
+  } catch (e) {
+    console.error("sendEmail error:", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+async function sendSMS(to, text) {
+  if (!twilioClient || !process.env.TWILIO_FROM) {
+    console.log(`[sms disabled] would text ${to}: ${text}`);
+    return { ok: false, skipped: true };
+  }
+  try {
+    const r = await twilioClient.messages.create({ to, from: process.env.TWILIO_FROM, body: text });
+    return { ok: true, sid: r.sid };
+  } catch (e) {
+    console.error("sendSMS error:", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+function adminGuard(req, res) {
+  const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
+  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
+    res.status(403).json({ error: "Forbidden" }); return false;
+  }
+  return true;
 }
 
 // -------------------------------
@@ -166,9 +204,20 @@ app.get("/api/health", (req, res) => {
 
 // ---- Students ----
 app.get("/api/students", (req, res) => {
+  const today = todayISO();
   db.all("SELECT * FROM students ORDER BY name COLLATE NOCASE ASC, id DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    // decorate with due_status
+    const out = rows.map(r => {
+      const rd = r.renewal_date || "";
+      let due_status = "ok";
+      if (rd) {
+        if (new Date(rd) < new Date(today)) due_status = "overdue";
+        else if (cmpDays(rd, today) <= 3) due_status = "due_soon";
+      }
+      return { ...r, due_status };
+    });
+    res.json(out);
   });
 });
 
@@ -191,8 +240,8 @@ app.post("/api/students", uploadPhoto.single("photo"), (req, res) => {
   } = req.body;
 
   if (!name) name = [first_name, last_name].filter(Boolean).join(" ").trim();
-  const start = start_date || todayISO();
-  const renewal = renewal_date || addDays(start, 28);
+  const start = (start_date && String(start_date).trim()) ? String(start_date).slice(0,10) : todayISO();
+  const renewal = (renewal_date && String(renewal_date).trim()) ? String(renewal_date).slice(0,10) : addDays(start, 28);
   const photoPath = req.file ? "/uploads/" + req.file.filename : null;
 
   const sql = `INSERT INTO students
@@ -218,8 +267,8 @@ app.put("/api/students/:id", uploadPhoto.single("photo"), (req, res) => {
   } = req.body;
 
   if (!name) name = [first_name, last_name].filter(Boolean).join(" ").trim();
-  const start = start_date || todayISO();
-  const renewal = renewal_date || addDays(start, 28);
+  const start = (start_date && String(start_date).trim()) ? String(start_date).slice(0,10) : todayISO();
+  const renewal = (renewal_date && String(renewal_date).trim()) ? String(renewal_date).slice(0,10) : addDays(start, 28);
   const photoPath = req.file ? "/uploads/" + req.file.filename : null;
 
   const sql = "UPDATE students SET " +
@@ -259,14 +308,49 @@ app.get("/api/payments", (req, res) => {
   );
 });
 
-app.post("/api/payments", (req, res) => {
+// summary: ?from=YYYY-MM-DD&to=YYYY-MM-DD (optional)
+app.get("/api/payments/summary", (req, res) => {
+  const { from, to } = req.query;
+  const cond = [], params = [];
+  if (from) { cond.push("date >= ?"); params.push(from); }
+  if (to)   { cond.push("date <= ?"); params.push(to); }
+  const where = cond.length ? ("WHERE " + cond.join(" AND ")) : "";
+  const sql = `
+    SELECT
+      SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END) AS taxable_total,
+      SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END) AS nontax_total,
+      SUM(amount) AS grand_total
+    FROM payments ${where}
+  `;
+  db.get(sql, params, (err, row) =>
+    err ? res.status(500).json({ error: err.message }) :
+    res.json({
+      taxable_total: row.taxable_total || 0,
+      nontax_total: row.nontax_total || 0,
+      grand_total: row.grand_total || 0
+    })
+  );
+});
+
+app.post("/api/payments", async (req, res) => {
   const { student_id, date, amount, method, taxable, note } = req.body;
   db.run(
     "INSERT INTO payments (student_id, date, amount, method, taxable, note) VALUES (?, ?, ?, ?, ?, ?)",
     [student_id, date, amount, method, taxable, note],
-    function (err) {
+    async function (err) {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
+
+      // send receipt (best-effort; non-blocking)
+      const pid = this.lastID;
+      db.get("SELECT name, email, phone FROM students WHERE id = ?", [student_id], async (e, stu) => {
+        if (!e && stu) {
+          const msgText = `Receipt: ${stu.name}\nDate: ${date}\nAmount: $${Number(amount).toFixed(2)}\nMethod: ${method}\nThank you!`;
+          if (stu.email) await sendEmail(stu.email, "Membership Payment Receipt", msgText);
+          if (stu.phone) await sendSMS(stu.phone, msgText);
+        }
+      });
+
+      res.json({ id: pid });
     }
   );
 });
@@ -284,7 +368,6 @@ app.get("/api/expenses", (req, res) => {
     err ? res.status(500).json({ error: err.message }) : res.json(rows)
   );
 });
-
 app.post("/api/expenses", (req, res) => {
   const { vendor, date, amount, taxable, category, note } = req.body;
   db.run(
@@ -299,23 +382,28 @@ app.post("/api/expenses", (req, res) => {
 
 // ---- Leads ----
 app.get("/api/leads", (req, res) => {
-  db.all("SELECT * FROM leads ORDER BY id DESC", [], (err, rows) =>
-    err ? res.status(500).json({ error: err.message }) : res.json(rows)
-  );
+  db.all("SELECT * FROM leads ORDER BY id DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const today = todayISO();
+    const out = rows.map(r => {
+      const created = r.created_at || today;
+      const age_days = Math.max(0, Math.floor((new Date(today) - new Date(created)) / 86400000));
+      return { ...r, age_days };
+    });
+    res.json(out);
+  });
 });
-
 app.post("/api/leads", (req, res) => {
   const { name, phone, email, interested_program, follow_up_date, status, notes } = req.body;
   db.run(
-    "INSERT INTO leads (name, phone, email, interested_program, follow_up_date, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [name, phone, email, interested_program, follow_up_date, status, notes],
+    "INSERT INTO leads (name, phone, email, interested_program, follow_up_date, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [name, phone, email, interested_program, follow_up_date, status, notes, todayISO()],
     function (err) {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ id: this.lastID });
     }
   );
 });
-
 app.patch("/api/leads/:id", (req, res) => {
   const { status, notes } = req.body;
   db.run(
@@ -327,7 +415,6 @@ app.patch("/api/leads/:id", (req, res) => {
     }
   );
 });
-
 app.delete("/api/leads/:id", (req, res) => {
   db.run("DELETE FROM leads WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: err.message });
@@ -348,23 +435,18 @@ app.get("/api/attendance", (req, res) => {
     err ? res.status(500).json({ error: err.message }) : res.json(rows)
   );
 });
-
 app.post("/api/attendance", (req, res) => {
   let { student_id, date, present } = req.body;
   const sid = parseInt(student_id, 10);
   const pres = (present === 1 || present === "1" || present === true || present === "true") ? 1 : 0;
   const d = (date && String(date).trim()) ? String(date).slice(0,10) : todayISO();
-
-  if (!Number.isFinite(sid)) {
-    return res.status(400).json({ error: "student_id is required" });
-  }
+  if (!Number.isFinite(sid)) return res.status(400).json({ error: "student_id is required" });
 
   db.get("SELECT id FROM students WHERE id = ?", [sid], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(400).json({ error: "Student " + sid + " not found" });
 
-    db.run(
-      "INSERT INTO attendance (student_id, date, present) VALUES (?, ?, ?)",
+    db.run("INSERT INTO attendance (student_id, date, present) VALUES (?, ?, ?)",
       [sid, d, pres],
       function (err2) {
         if (err2) return res.status(500).json({ error: err2.message });
@@ -383,7 +465,6 @@ app.post("/api/attendance", (req, res) => {
     );
   });
 });
-
 app.delete("/api/attendance/:id", (req, res) => {
   db.run("DELETE FROM attendance WHERE id = ?", [req.params.id], function (err) {
     if (err) return res.status(500).json({ error: err.message });
@@ -392,7 +473,7 @@ app.delete("/api/attendance/:id", (req, res) => {
 });
 
 // -------------------------------
-// ADMIN IMPORT (one-time)
+// ADMIN: backup & CSV export (token required)
 // -------------------------------
 function checkAdmin(req, res) {
   const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
@@ -402,40 +483,47 @@ function checkAdmin(req, res) {
   }
   return true;
 }
-
-// Replace DB file safely
-app.post("/admin/replace-db", uploadAny.single("file"), (req, res) => {
+app.get("/admin/backup/db", (req, res) => {
   if (!checkAdmin(req, res)) return;
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  res.download(dbFile, "dojo.db");
+});
+app.get("/admin/export/csv", (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const allowed = new Set(["students","payments","expenses","leads","attendance"]);
+  const table = String(req.query.table || "").toLowerCase();
+  if (!allowed.has(table)) return res.status(400).json({ error: "invalid table" });
 
-  const tempPath = req.file.path;
-  // Close DB, swap file, reopen
-  db.close((err) => {
-    if (err) return res.status(500).json({ error: "Close DB error: " + err.message });
-    try {
-      fs.copyFileSync(tempPath, dbFile);
-      fs.unlinkSync(tempPath);
-    } catch (e) {
-      return res.status(500).json({ error: "Copy DB error: " + e.message });
-    }
-    openDb();
-    res.json({ ok: true, message: "Database replaced" });
+  db.all(`SELECT * FROM ${table}`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const cols = rows.length ? Object.keys(rows[0]) : [];
+    const csv = [cols.join(",")].concat(
+      rows.map(r => cols.map(c => {
+        const v = r[c] == null ? "" : String(r[c]);
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
+      }).join(","))
+    ).join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${table}.csv"`);
+    res.send(csv);
   });
 });
 
-// Upload ZIP of uploads/ and extract
-app.post("/admin/upload-uploads-zip", uploadAny.single("zip"), (req, res) => {
-  if (!checkAdmin(req, res)) return;
-  if (!req.file) return res.status(400).json({ error: "No zip uploaded" });
-
-  try {
-    const zip = new AdmZip(req.file.path);
-    zip.extractAllTo(uploadsDir, true);
-    fs.unlinkSync(req.file.path);
-    res.json({ ok: true, message: "Uploads extracted to " + uploadsDir });
-  } catch (e) {
-    res.status(500).json({ error: "Unzip failed: " + e.message });
-  }
+// -------------------------------
+// TASK: daily reminders (due in 3 days)
+// -------------------------------
+app.post("/api/tasks/due-reminders", async (req, res) => {
+  if (!adminGuard(req, res)) return;
+  const target = addDays(todayISO(), 3);
+  db.all("SELECT * FROM students WHERE renewal_date = ?", [target], async (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    let sent = 0;
+    for (const s of rows) {
+      const msg = `Hi ${s.name || ""}, reminder: your membership renews on ${s.renewal_date}. See you at the dojo!`;
+      if (s.email) { const r = await sendEmail(s.email, "Membership Renewal Reminder", msg); if (r.ok) sent++; }
+      if (s.phone) { const r = await sendSMS(s.phone, msg); if (r.ok) sent++; }
+    }
+    res.json({ checked: rows.length, notifications_sent: sent });
+  });
 });
 
 // -------------------------------
