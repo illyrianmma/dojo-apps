@@ -6,7 +6,7 @@ const fs = require("fs");
 const multer = require("multer");
 const AdmZip = require("adm-zip");
 
-// optional mail/SMS libs (safe if env not set)
+// Optional email/SMS (safe no-op if env not set)
 let sgMail = null, twilioClient = null;
 if (process.env.SENDGRID_API_KEY) {
   try {
@@ -33,8 +33,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const dbFile = path.join(DATA_DIR, "dojo.db");
 const uploadsDir = path.join(DATA_DIR, "uploads");
 const tmpDir = path.join(DATA_DIR, "tmp");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+for (const d of [uploadsDir, tmpDir]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 
 // -------------------------------
 // Parsers & static
@@ -44,8 +43,8 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public"), { maxAge: 0, etag: false }));
 app.use("/uploads", express.static(uploadsDir));
 
-// Friendly routes / redirects so .htm and extensionless work
-const PAGES = ["index","students","payments","attendance","leads","expenses","accounting","admin-tools","admin-import"];
+// Friendly routes / redirects
+const PAGES = ["index","students","payments","attendance","leads","expenses","accounting","dashboard","admin-tools","admin-import"];
 app.get("/", (req,res) => res.redirect("/index.html"));
 PAGES.forEach(name => {
   app.get("/" + name, (req,res) =>
@@ -79,7 +78,7 @@ const fileStorage = multer.diskStorage({
 const uploadAny = multer({ storage: fileStorage, limits: { fileSize: 200 * 1024 * 1024 } }); // up to 200MB
 
 // -------------------------------
-// Database helpers
+// Database
 // -------------------------------
 const db = new sqlite3.Database(dbFile, (err) => {
   if (err) console.error("Error opening database:", err.message);
@@ -207,7 +206,6 @@ app.get("/api/students", (req, res) => {
   const today = todayISO();
   db.all("SELECT * FROM students ORDER BY name COLLATE NOCASE ASC, id DESC", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    // decorate with due_status
     const out = rows.map(r => {
       const rd = r.renewal_date || "";
       let due_status = "ok";
@@ -473,7 +471,7 @@ app.delete("/api/attendance/:id", (req, res) => {
 });
 
 // -------------------------------
-// ADMIN: backup & CSV export (token required)
+// ADMIN: backup/export + IMPORT (token required)
 // -------------------------------
 function checkAdmin(req, res) {
   const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
@@ -483,10 +481,14 @@ function checkAdmin(req, res) {
   }
   return true;
 }
+
+// Backup DB
 app.get("/admin/backup/db", (req, res) => {
   if (!checkAdmin(req, res)) return;
   res.download(dbFile, "dojo.db");
 });
+
+// Export CSV
 app.get("/admin/export/csv", (req, res) => {
   if (!checkAdmin(req, res)) return;
   const allowed = new Set(["students","payments","expenses","leads","attendance"]);
@@ -508,8 +510,46 @@ app.get("/admin/export/csv", (req, res) => {
   });
 });
 
+// IMPORT: replace DB file safely
+app.post("/admin/replace-db", uploadAny.single("file"), (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const tempPath = req.file.path;
+  db.close((err) => {
+    if (err) return res.status(500).json({ error: "Close DB error: " + err.message });
+    try {
+      fs.copyFileSync(tempPath, dbFile);
+      fs.unlinkSync(tempPath);
+    } catch (e) {
+      return res.status(500).json({ error: "Copy DB error: " + e.message });
+    }
+    // reopen DB
+    const reopened = new sqlite3.Database(dbFile, (e2) => {
+      if (e2) return res.status(500).json({ error: "Reopen DB error: " + e2.message });
+      reopened.exec("PRAGMA foreign_keys = ON;");
+      res.json({ ok: true, message: "Database replaced" });
+    });
+  });
+});
+
+// IMPORT: upload ZIP of uploads/ and extract
+app.post("/admin/upload-uploads-zip", uploadAny.single("zip"), (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  if (!req.file) return res.status(400).json({ error: "No zip uploaded" });
+
+  try {
+    const zip = new AdmZip(req.file.path);
+    zip.extractAllTo(uploadsDir, true);
+    fs.unlinkSync(req.file.path);
+    res.json({ ok: true, message: "Uploads extracted to " + uploadsDir });
+  } catch (e) {
+    res.status(500).json({ error: "Unzip failed: " + e.message });
+  }
+});
+
 // -------------------------------
-// TASK: daily reminders (due in 3 days)
+// TASK: daily reminders (due in 3 days) — pair with a Cron job if desired
 // -------------------------------
 app.post("/api/tasks/due-reminders", async (req, res) => {
   if (!adminGuard(req, res)) return;

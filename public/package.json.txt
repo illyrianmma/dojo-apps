@@ -4,15 +4,16 @@
   "private": true,
   "description": "Dojo Manager",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "npm rebuild sqlite3 --build-from-source"
   },
-  "engines": {
-    "node": ">=18"
-  },
+  "engines": { "node": "20.x" },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.0",
     "adm-zip": "^0.5.10",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "twilio": "^5.3.3"
   }
 }
