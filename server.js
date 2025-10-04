@@ -1,4 +1,4 @@
-// server.js (final)
+// server.js (stable build)
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
@@ -102,7 +102,7 @@ db.serialize(() => {
     notes TEXT
   )`);
 
-  // 🔧 Auto-migrate: add leads.created_at if missing (fixes your error)
+  // Auto-migrate: add leads.created_at if missing
   db.all(`PRAGMA table_info(leads)`, [], (e, cols) => {
     if (e) return;
     const hasCreatedAt = cols.some(c => c.name === "created_at");
@@ -266,7 +266,7 @@ app.post("/api/expenses", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
 });
 
-// 🔧 FIX: Edit (save) expenses
+// FIX: Edit (save) expenses
 app.put("/api/expenses/:id", (req,res)=>{
   const { vendor, date, amount, taxable, category, note } = req.body;
   db.run("UPDATE expenses SET vendor=?, date=?, amount=?, taxable=?, category=?, note=? WHERE id=?",
@@ -274,24 +274,22 @@ app.put("/api/expenses/:id", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
 });
 
-// 🔧 FIX: Delete expenses
+// FIX: Delete expenses
 app.delete("/api/expenses/:id", (req,res)=>{
   db.run("DELETE FROM expenses WHERE id=?", [req.params.id],
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ deleted:this.changes });});
 });
 
 // ==================== LEADS ====================
+// Compute age_days in SQL so colors work even if created_at is NULL
 app.get("/api/leads", (req,res)=>{
-  db.all("SELECT * FROM leads ORDER BY id DESC", [], (err,rows)=>{
-    if (err) return res.status(500).json({ error: err.message });
-    const today = todayISO();
-    const out = rows.map(r=>{
-      const created = r.created_at || today;
-      const age_days = Math.max(0, Math.floor((new Date(today)-new Date(created))/86400000));
-      return { ...r, age_days };
-    });
-    res.json(out);
-  });
+  const sql = `
+    SELECT
+      id, name, phone, email, interested_program, follow_up_date, status, notes, created_at,
+      CAST(julianday('now') - julianday(COALESCE(created_at, follow_up_date, date('now'))) AS INTEGER) AS age_days
+    FROM leads
+    ORDER BY id DESC`;
+  db.all(sql, [], (err,rows)=> err?res.status(500).json({error:err.message}):res.json(rows));
 });
 
 app.post("/api/leads", (req,res)=>{
@@ -302,7 +300,7 @@ app.post("/api/leads", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
 });
 
-// NEW: full update (edit) for leads
+// Full update (edit)
 app.put("/api/leads/:id", (req,res)=>{
   const { name, phone, email, interested_program, follow_up_date, status, notes } = req.body;
   db.run(`UPDATE leads SET name=?, phone=?, email=?, interested_program=?, follow_up_date=?, status=?, notes=? WHERE id=?`,
@@ -310,7 +308,7 @@ app.put("/api/leads/:id", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
 });
 
-// Keep PATCH too (status/notes quick change)
+// Quick update (status/notes)
 app.patch("/api/leads/:id", (req,res)=>{
   const { status, notes } = req.body;
   db.run("UPDATE leads SET status=COALESCE(?,status), notes=COALESCE(?,notes) WHERE id=?",
@@ -318,13 +316,13 @@ app.patch("/api/leads/:id", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
 });
 
-// 🔧 delete leads
+// Delete lead
 app.delete("/api/leads/:id", (req,res)=>{
   db.run("DELETE FROM leads WHERE id=?", [req.params.id],
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ deleted:this.changes });});
 });
 
-// ==================== ATTENDANCE (unchanged logic) ====================
+// ==================== ATTENDANCE ====================
 app.get("/api/attendance", (req,res)=>{
   const sql = `SELECT a.id,a.student_id,a.date,a.present,COALESCE(s.name,'ID '||a.student_id) AS student_name
                FROM attendance a LEFT JOIN students s ON a.student_id=s.id
@@ -356,34 +354,6 @@ app.delete("/api/attendance/:id", (req,res)=>{
     if (err) return res.status(500).json({ error: err.message });
     res.json({ deleted:this.changes });
   });
-});
-
-// ==================== ACCOUNTING COMBINED (optional helper) ====================
-app.get("/api/accounting/summary", (req,res)=>{
-  const { from, to } = req.query;
-  const run = (sql, params)=> new Promise((resolve,reject)=>{
-    db.get(sql, params, (e,row)=> e?reject(e):resolve(row||{}));
-  });
-  const cond=[], p=[];
-  if (from){ cond.push("date >= ?"); p.push(from); }
-  if (to){ cond.push("date <= ?"); p.push(to); }
-  const where = cond.length ? ("WHERE "+cond.join(" AND ")) : "";
-  const paySQL = `SELECT
-    COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS income_taxable,
-    COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS income_nontax,
-    COALESCE(SUM(amount),0) AS income_total
-    FROM payments ${where}`;
-  const expSQL = `SELECT
-    COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS expense_taxable,
-    COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS expense_nontax,
-    COALESCE(SUM(amount),0) AS expense_total
-    FROM expenses ${where}`;
-  Promise.all([run(paySQL,p), run(expSQL,p)]).then(([i,e])=>{
-    res.json({
-      ...i, ...e,
-      net_total: (i.income_total||0) - (e.expense_total||0)
-    });
-  }).catch(err=> res.status(500).json({ error: err.message }));
 });
 
 // --- start ---

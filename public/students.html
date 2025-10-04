@@ -1,268 +1,186 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <title>Students</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    label { display:block; margin-top:8px; font-size:14px; }
-    input, select { width:100%; padding:8px; box-sizing:border-box; }
-    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
-    .actions { margin-top:10px; display:flex; gap:8px; }
-    table { width:100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
-    th { background:#f9f9f9; }
-    img.thumb { width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #ddd; }
-    .msg { margin:8px 0; }
-    .ok{color:#137333} .err{color:#b00020}
-    .editing { background:#fff7e6; }
+    body{font-family:system-ui,Arial,sans-serif;max-width:1150px;margin:24px auto;padding:0 16px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    th{background:#f5f5f5}
+    .row{display:flex;gap:16px;flex-wrap:wrap}
+    .card{flex:1 1 520px;border:1px solid #ddd;border-radius:10px;padding:12px}
+    input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
+    .actions button{width:auto;margin-right:6px}
+    /* overdue colors */
+    tr.overdue{background:#ffe5e5}
+    tr.due_soon{background:#fff0e0}
+    .preview{max-width:140px;max-height:140px;display:block;border:1px solid #ccc;border-radius:6px}
   </style>
 </head>
 <body>
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h1>Students</h1>
-    <a href="index.html">← Back to Main Page</a>
+  <h1>Students</h1>
+  <p><a href="/index.html">Back to Main</a></p>
+
+  <div class="row">
+    <div class="card">
+      <h2>Add / Edit Student</h2>
+      <input type="hidden" id="sid" />
+      <label>Name</label><input id="name" placeholder="Full name">
+      <label>Phone</label><input id="phone" placeholder="Phone">
+      <label>Email</label><input id="email" placeholder="Email">
+
+      <label>Address</label><input id="address" placeholder="Address">
+      <label>Age</label><input id="age" type="number" min="0" step="1" placeholder="Age">
+      <label>Program</label><input id="program" placeholder="Program">
+
+      <div class="row" style="gap:12px">
+        <div style="flex:1">
+          <label>Start Date</label><input id="start_date" type="date">
+        </div>
+        <div style="flex:1">
+          <label>Renewal Date (+28 days)</label><input id="renewal_date" type="date">
+        </div>
+      </div>
+
+      <label>Parent Name</label><input id="parent_name" placeholder="Parent (if minor)">
+      <label>Parent Phone</label><input id="parent_phone" placeholder="Parent Phone">
+      <label>Notes</label><textarea id="notes" rows="3" placeholder="Notes"></textarea>
+
+      <label>Photo</label><input id="photo" type="file" accept="image/*">
+      <img id="preview" class="preview" alt="No photo" />
+
+      <button id="save">Save Student</button>
+      <button id="reset" type="button">Reset Form</button>
+    </div>
+
+    <div class="card">
+      <h2>Student List</h2>
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>Photo</th><th>Name</th><th>Contacts</th>
+            <th>Program</th><th>Start</th><th>Renewal</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="8">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
-  <div id="msg" class="msg"></div>
-
-  <form id="studentForm" enctype="multipart/form-data">
-    <div class="row">
-      <div>
-        <label for="first_name">First Name</label>
-        <input id="first_name" required />
-      </div>
-      <div>
-        <label for="last_name">Last Name</label>
-        <input id="last_name" required />
-      </div>
-
-      <div>
-        <label for="phone">Phone</label>
-        <input id="phone" />
-      </div>
-      <div>
-        <label for="email">Email</label>
-        <input id="email" type="email" />
-      </div>
-
-      <div>
-        <label for="address">Address</label>
-        <input id="address" />
-      </div>
-      <div>
-        <label for="age">Age</label>
-        <input id="age" type="number" />
-      </div>
-
-      <div>
-        <label for="program">Program</label>
-        <input id="program" />
-      </div>
-      <div>
-        <label for="start_date">Start Date</label>
-        <input id="start_date" type="date" />
-      </div>
-
-      <div>
-        <label for="renewal_date">Renewal Date</label>
-        <input id="renewal_date" type="date" />
-      </div>
-      <div>
-        <label for="parent_name">Parent Name (if minor)</label>
-        <input id="parent_name" />
-      </div>
-
-      <div>
-        <label for="parent_phone">Parent Phone</label>
-        <input id="parent_phone" />
-      </div>
-      <div>
-        <label for="notes">Notes</label>
-        <input id="notes" />
-      </div>
-
-      <div>
-        <label for="photo">Photo</label>
-        <input id="photo" type="file" accept="image/*" />
-        <img id="preview" class="thumb" alt="Preview" style="display:none; margin-top:6px;" />
-      </div>
-    </div>
-
-    <div class="actions">
-      <button type="submit" id="saveBtn">Save Student</button>
-      <button type="button" id="cancelEditBtn" style="display:none;">Cancel Edit</button>
-      <button type="reset">Reset</button>
-    </div>
-  </form>
-
-  <table id="studentsTable">
-    <thead>
-      <tr>
-        <th>Photo</th>
-        <th>Name</th>
-        <th>Contacts</th>
-        <th>Program</th>
-        <th>Start</th>
-        <th>Renewal</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="studentsBody">
-      <tr><td colspan="7">Loading…</td></tr>
-    </tbody>
-  </table>
-
 <script>
-const $ = (id) => document.getElementById(id);
-const msg = (t, ok=false) => { const m=$('msg'); m.className='msg '+(ok?'ok':'err'); m.textContent=t; if(ok)setTimeout(()=>{m.textContent='';m.className='msg';},1800); };
+const $ = s => document.querySelector(s);
 
-$('photo').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (!f) { $('preview').style.display='none'; return; }
-  $('preview').src = URL.createObjectURL(f);
-  $('preview').style.display = 'inline-block';
+function today(){ return new Date().toISOString().slice(0,10); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); }
+
+function prefills(){
+  const s=$('#start_date'), r=$('#renewal_date');
+  if(s && !s.value) s.value = today();
+  if(r) r.value = addDays(s.value || today(), 28);
+  if(s && r){ s.addEventListener('change', ()=>{ r.value = addDays(s.value, 28); }); }
+}
+prefills();
+
+$('#photo').addEventListener('change', ()=>{
+  const f = $('#photo').files[0];
+  const pv = $('#preview');
+  if(!f){ pv.src=''; pv.alt='No photo'; return; }
+  const url = URL.createObjectURL(f);
+  pv.src = url; pv.alt = 'preview';
 });
 
-function setEditing(id, s){
-  $('studentForm').dataset.editId = id;
-  $('saveBtn').textContent = 'Update Student';
-  $('cancelEditBtn').style.display = 'inline-block';
-  $('studentForm').classList.add('editing');
+function rowHTML(s){
+  const img = s.photo ? `<img src="${s.photo}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ccc">` : '';
+  const contacts = [s.phone||'', s.email||''].filter(Boolean).join('<br>');
+  return `
+    <td>${img}</td>
+    <td>${s.name||''}</td>
+    <td>${contacts}</td>
+    <td>${s.program||''}</td>
+    <td>${s.start_date||''}</td>
+    <td>${s.renewal_date||''}</td>
+    <td>${s.due_status||'ok'}</td>
+    <td class="actions">
+      <button class="edit" data-id="${s.id}">Edit</button>
+      <button class="del" data-id="${s.id}">Delete</button>
+    </td>`;
+}
 
-  // Split name into first + last
-  const parts = (s.name || '').trim().split(/\s+/);
-  const first = parts.shift() || '';
-  const last = parts.join(' ');
+async function load(){
+  const tb = $('#tbl tbody'); tb.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
+  const r = await fetch('/api/students'); const rows = await r.json();
+  if(!Array.isArray(rows) || rows.length===0){ tb.innerHTML='<tr><td colspan="8">No students</td></tr>'; return; }
+  tb.innerHTML='';
+  rows.forEach(s=>{
+    const tr=document.createElement('tr');
+    if(s.due_status==='overdue') tr.classList.add('overdue');
+    else if(s.due_status==='due_soon') tr.classList.add('due_soon');
+    tr.innerHTML = rowHTML(s);
+    tb.appendChild(tr);
+  });
+}
+load();
 
-  $('first_name').value = first;
-  $('last_name').value = last;
-  $('phone').value = s.phone || '';
-  $('email').value = s.email || '';
-  $('address').value = s.address || '';
-  $('age').value = s.age || '';
-  $('program').value = s.program || '';
-  $('start_date').value = s.start_date || '';
-  $('renewal_date').value = s.renewal_date || '';
-  $('parent_name').value = s.parent_name || '';
-  $('parent_phone').value = s.parent_phone || '';
-  $('notes').value = s.notes || '';
+function formToFD(id){
+  const fd = new FormData();
+  fd.append('name',$('#name').value.trim());
+  fd.append('phone',$('#phone').value.trim());
+  fd.append('email',$('#email').value.trim());
+  fd.append('address',$('#address').value.trim());
+  fd.append('age',$('#age').value.trim());
+  fd.append('program',$('#program').value.trim());
+  fd.append('start_date',$('#start_date').value);
+  fd.append('renewal_date',$('#renewal_date').value);
+  fd.append('parent_name',$('#parent_name').value.trim());
+  fd.append('parent_phone',$('#parent_phone').value.trim());
+  fd.append('notes',$('#notes').value.trim());
+  const f=$('#photo').files[0]; if(f) fd.append('photo', f);
+  return fd;
+}
 
-  if (s.photo) {
-    $('preview').src = s.photo;
-    $('preview').style.display = 'inline-block';
-  } else {
-    $('preview').style.display = 'none';
+$('#save').addEventListener('click', async ()=>{
+  const id = $('#sid').value.trim();
+  const opts = { method: id? 'PUT':'POST', body: formToFD(id) };
+  const url = id ? `/api/students/${id}` : '/api/students';
+  const r = await fetch(url, opts);
+  const out = await r.json();
+  if(!r.ok){ alert(out.error||'Save failed'); return; }
+  resetForm(); load();
+});
+
+function resetForm(){
+  ['sid','name','phone','email','address','age','program','parent_name','parent_phone','notes'].forEach(id=>$('#'+id).value='');
+  $('#photo').value=''; $('#preview').src=''; $('#preview').alt='No photo';
+  $('#start_date').value=''; $('#renewal_date').value='';
+  prefills();
+}
+$('#reset').addEventListener('click', resetForm);
+
+document.getElementById('tbl').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const id = btn.dataset.id;
+  const tr = btn.closest('tr'); const t=[...tr.children];
+  if(btn.classList.contains('edit')){
+    $('#sid').value = id;
+    $('#name').value = t[1].textContent.trim();
+    const parts = t[2].innerHTML.split('<br>');
+    $('#phone').value = (parts[0]||'').replace(/<[^>]*>/g,'');
+    $('#email').value = (parts[1]||'').replace(/<[^>]*>/g,'');
+    $('#program').value = t[3].textContent.trim();
+    $('#start_date').value = t[4].textContent.trim();
+    $('#renewal_date').value = t[5].textContent.trim();
+    // other fields (address, parents, notes) not shown in table—leave as-is
+    window.scrollTo({top:0, behavior:'smooth'});
+  } else if(btn.classList.contains('del')){
+    if(!confirm('Delete this student and related records?')) return;
+    const r = await fetch(`/api/students/${id}`, {method:'DELETE'});
+    const out = await r.json();
+    if(!r.ok){ alert(out.error||'Delete failed'); return; }
+    load();
   }
-}
-
-function clearEditing(){
-  delete $('studentForm').dataset.editId;
-  $('saveBtn').textContent = 'Save Student';
-  $('cancelEditBtn').style.display = 'none';
-  $('studentForm').classList.remove('editing');
-  $('studentForm').reset();
-  $('preview').style.display='none';
-}
-
-$('cancelEditBtn').addEventListener('click', clearEditing);
-
-async function loadStudents() {
-  const tbody = $('studentsBody');
-  tbody.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
-  try {
-    const res = await fetch('/api/students');
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7">No students yet.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = '';
-    for (const s of data) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${s.photo ? `<img class="thumb" src="${s.photo}">` : '—'}</td>
-        <td>${s.name || ''}</td>
-        <td>${[s.phone, s.email].filter(Boolean).join('<br>')}</td>
-        <td>${s.program || ''}</td>
-        <td>${s.start_date || ''}</td>
-        <td>${s.renewal_date || ''}</td>
-        <td>
-          <button data-id="${s.id}" class="edit">Edit</button>
-          <button data-id="${s.id}" class="del">Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    }
-  } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="7" class="err">Error: ${e.message}</td></tr>`;
-  }
-}
-
-async function submitStudent(e) {
-  e.preventDefault();
-  try {
-    const fd = new FormData();
-    fd.append('first_name', $('first_name').value);
-    fd.append('last_name', $('last_name').value);
-    fd.append('phone', $('phone').value);
-    fd.append('email', $('email').value);
-    fd.append('address', $('address').value);
-    fd.append('age', $('age').value);
-    fd.append('program', $('program').value);
-    fd.append('start_date', $('start_date').value);
-    fd.append('renewal_date', $('renewal_date').value);
-    fd.append('parent_name', $('parent_name').value);
-    fd.append('parent_phone', $('parent_phone').value);
-    fd.append('notes', $('notes').value);
-    if ($('photo').files[0]) fd.append('photo', $('photo').files[0]);
-
-    const editId = $('studentForm').dataset.editId;
-    const url = editId ? `/api/students/${editId}` : '/api/students';
-    const method = editId ? 'PUT' : 'POST';
-
-    const res = await fetch(url, { method, body: fd });
-    const out = await res.json();
-    if (!res.ok) throw new Error(out.error || 'Save failed');
-
-    msg(editId ? 'Student updated.' : 'Student saved.', true);
-    clearEditing();
-    await loadStudents();
-  } catch (e) { msg(e.message); }
-}
-
-async function handleTableClick(e) {
-  const id = e.target.dataset.id;
-  if (!id) return;
-
-  if (e.target.classList.contains('del')) {
-    if (!confirm(`Delete student ${id}?`)) return;
-    try {
-      const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.error || 'Delete failed');
-      msg(`Deleted student ${id}.`, true);
-      await loadStudents();
-    } catch (e) { msg(e.message); }
-  }
-
-  if (e.target.classList.contains('edit')) {
-    try {
-      const res = await fetch('/api/students');
-      const all = await res.json();
-      const s = all.find(x => String(x.id) === String(id));
-      if (!s) return msg('Student not found');
-      setEditing(id, s);
-    } catch (err) { msg(err.message); }
-  }
-}
-
-$('studentForm').addEventListener('submit', submitStudent);
-$('studentsTable').addEventListener('click', handleTableClick);
-loadStudents();
+});
 </script>
 </body>
 </html>

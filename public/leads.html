@@ -12,8 +12,8 @@
     .row{display:flex;gap:16px;flex-wrap:wrap}
     .card{flex:1 1 420px;border:1px solid #ddd;border-radius:10px;padding:12px}
     input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
-    tr.lead-warn{background:#fff9db}   /* >=7 days and not contacted */
-    tr.lead-danger{background:#ffe5e5} /* >=14 days and not contacted */
+    tr.lead-warn{background:#fff9db}   /* >=4 days and not contacted/enrolled */
+    tr.lead-danger{background:#ffe5e5} /* >=14 days and not contacted/enrolled */
     .actions button{width:auto;margin-right:6px}
   </style>
 </head>
@@ -56,21 +56,10 @@
   </div>
 
 <script>
-function esc(s){return String(s??"")}
-function clearForm(){ document.querySelectorAll('#lead_id,#name,#phone,#email,#interested_program,#follow_up_date,#status,#notes')
-  .forEach(el=> el.value=""); }
-function formData(){
-  return {
-    name:$('#name').value.trim(),
-    phone:$('#phone').value.trim(),
-    email:$('#email').value.trim(),
-    interested_program:$('#interested_program').value.trim(),
-    follow_up_date:$('#follow_up_date').value,
-    status:$('#status').value,
-    notes:$('#notes').value.trim()
-  };
-}
 const $=sel=>document.querySelector(sel);
+function esc(s){return String(s??"")}
+function clearForm(){ ['lead_id','name','phone','email','interested_program','follow_up_date','status','notes']
+  .forEach(id=>$('#'+id).value=""); }
 
 async function load(){
   const tb=$('#tbl tbody'); tb.innerHTML='<tr><td colspan="7">Loading…</td></tr>';
@@ -79,10 +68,11 @@ async function load(){
   tb.innerHTML='';
   rows.forEach(l=>{
     const tr=document.createElement('tr');
-    const contacted = (l.status||'').toLowerCase()==='contacted' || (l.status||'').toLowerCase()==='enrolled';
+    const st=(l.status||'').toLowerCase();
+    const contacted = (st==='contacted' || st==='enrolled');
     if(!contacted){
       if((l.age_days||0) >= 14) tr.classList.add('lead-danger');
-      else if((l.age_days||0) >= 7) tr.classList.add('lead-warn');
+      else if((l.age_days||0) >= 4) tr.classList.add('lead-warn');
     }
     tr.innerHTML = `
       <td>${esc(l.name)}</td>
@@ -101,7 +91,15 @@ async function load(){
 
 document.getElementById('saveBtn').onclick = async ()=>{
   const id = $('#lead_id').value.trim();
-  const body = formData();
+  const body = {
+    name:$('#name').value.trim(),
+    phone:$('#phone').value.trim(),
+    email:$('#email').value.trim(),
+    interested_program:$('#interested_program').value.trim(),
+    follow_up_date:$('#follow_up_date').value,
+    status:$('#status').value,
+    notes:$('#notes').value.trim()
+  };
   const opts = { method: id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) };
   const url = id ? `/api/leads/${id}` : '/api/leads';
   const r=await fetch(url, opts); const out=await r.json();
@@ -114,15 +112,14 @@ document.getElementById('tbl').addEventListener('click', async (e)=>{
   const btn=e.target.closest('button'); if(!btn) return;
   const id=btn.dataset.id;
   if(btn.classList.contains('edit')){
-    // load row into form
-    const tr=btn.closest('tr'); const tds=[...tr.children];
+    const tr=btn.closest('tr'); const t=[...tr.children];
     $('#lead_id').value = id;
-    $('#name').value = tds[0].textContent;
-    $('#phone').value = tds[1].textContent;
-    $('#email').value = tds[2].textContent;
-    $('#interested_program').value = tds[3].textContent;
-    $('#status').value = tds[5].textContent || '';
-    // follow_up_date & notes need fetch (optional); leaving as-is
+    $('#name').value = t[0].textContent;
+    $('#phone').value = t[1].textContent;
+    $('#email').value = t[2].textContent;
+    $('#interested_program').value = t[3].textContent;
+    $('#status').value = t[5].textContent || '';
+    window.scrollTo({top:0,behavior:'smooth'});
   } else if(btn.classList.contains('del')){
     if(!confirm('Delete this lead?')) return;
     const r=await fetch(`/api/leads/${id}`, {method:'DELETE'}); const out=await r.json();
