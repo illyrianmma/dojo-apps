@@ -1,113 +1,120 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
   <title>Expenses</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
-    input { margin: 0.25rem; }
-    #err { color:#b00020; }
+    body{font-family:system-ui,Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    th{background:#f5f5f5}
+    .row{display:flex;gap:16px;flex-wrap:wrap}
+    .card{flex:1 1 420px;border:1px solid #ddd;border-radius:10px;padding:12px}
+    input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
+    .actions button{width:auto;margin-right:6px}
   </style>
 </head>
 <body>
   <h1>Expenses</h1>
-  <div id="err"></div>
-  <p><a href="index.html">Back to Main Page</a></p>
+  <p><a href="/index.html">Back to Main</a></p>
 
-  <form id="expForm">
-    <input type="hidden" id="exp_id">
-    <input type="text" id="exp_vendor" placeholder="Vendor" required>
-    <input type="number" id="exp_amount" placeholder="Amount" step="0.01" required>
-    <label><input type="checkbox" id="exp_taxable"> Taxable</label>
-    <input type="date" id="exp_date">
-    <input type="text" id="exp_category" placeholder="Category">
-    <input type="text" id="exp_note" placeholder="Note">
-    <button type="submit">Save Expense</button>
-    <button type="button" id="exp_reset">Reset</button>
-  </form>
+  <div class="row">
+    <div class="card">
+      <h2>Add / Edit Expense</h2>
+      <input type="hidden" id="exp_id" />
+      <label>Vendor</label><input id="vendor" />
+      <label>Date</label><input type="date" id="date" />
+      <label>Amount</label><input type="number" step="0.01" id="amount" />
+      <label>Taxable</label>
+      <select id="taxable"><option value="1">Taxable</option><option value="0">Non-taxable</option></select>
+      <label>Category</label><input id="category" />
+      <label>Note</label><textarea id="note" rows="2"></textarea>
+      <button id="saveBtn">Save Expense</button>
+      <button id="resetBtn" type="button">Reset</button>
+    </div>
 
-  <table>
-    <thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Taxable</th><th>Note</th><th>Actions</th></tr></thead>
-    <tbody id="exp_list"></tbody>
-  </table>
+    <div class="card">
+      <h2>Expense List</h2>
+      <table id="tbl">
+        <thead>
+          <tr><th>Vendor</th><th>Date</th><th>Amount</th><th>Taxable</th><th>Category</th><th>Note</th><th>Actions</th></tr>
+        </thead>
+        <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 
-  <script>
-    const err = document.getElementById('err'); function showError(m){ err.textContent=m; setTimeout(()=>err.textContent='',5000); }
-    const expForm = document.getElementById('expForm');
-    const expId = document.getElementById('exp_id');
-    const expDate = document.getElementById('exp_date');
-    const expList = document.getElementById('exp_list');
-    const expReset = document.getElementById('exp_reset');
+<script>
+const $=s=>document.querySelector(s);
+function clearForm(){ ['exp_id','vendor','date','amount','category','note'].forEach(id=>$('#'+id).value=""); $('#taxable').value="1"; }
+function rowToForm(tr,id){
+  const t=[...tr.children];
+  $('#exp_id').value=id;
+  $('#vendor').value=t[0].textContent;
+  $('#date').value=t[1].textContent;
+  $('#amount').value=t[2].textContent.replace(/[^0-9.]/g,'');
+  $('#taxable').value=(t[3].textContent.trim().toLowerCase()==='taxable')?'1':'0';
+  $('#category').value=t[4].textContent;
+  $('#note').value=t[5].textContent;
+}
 
-    function today(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
-    function resetForm(){ expForm.reset(); expId.value=''; expDate.value = today(); }
+async function load(){
+  const tb=$('#tbl tbody'); tb.innerHTML='<tr><td colspan="7">Loading…</td></tr>';
+  const r=await fetch('/api/expenses'); const rows=await r.json();
+  if(!Array.isArray(rows)||rows.length===0){ tb.innerHTML='<tr><td colspan="7">No expenses</td></tr>'; return; }
+  tb.innerHTML='';
+  rows.forEach(x=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${x.vendor||''}</td>
+      <td>${x.date||''}</td>
+      <td>$${Number(x.amount||0).toFixed(2)}</td>
+      <td>${x.taxable? 'Taxable':'Non-tax'}</td>
+      <td>${x.category||''}</td>
+      <td>${x.note||''}</td>
+      <td class="actions">
+        <button data-id="${x.id}" class="edit">Edit</button>
+        <button data-id="${x.id}" class="del">Delete</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+}
 
-    async function loadExpenses() {
-      const res = await fetch('/api/expenses'); if (!res.ok) { showError('Load failed'); return; }
-      const rows = await res.json();
-      expList.innerHTML = '';
-      rows.forEach(x => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${x.date}</td>
-          <td>${x.vendor || ''}</td>
-          <td>${x.category || ''}</td>
-          <td>$${Number(x.amount).toFixed(2)}</td>
-          <td>${x.taxable ? 'Yes' : 'No'}</td>
-          <td>${x.note || ''}</td>
-          <td>
-            <button data-id="${x.id}" class="edit">Edit</button>
-            <button data-id="${x.id}" class="del">Delete</button>
-          </td>
-        `;
-        expList.appendChild(tr);
-      });
-      expList.querySelectorAll('button.edit').forEach(b => b.onclick = () => editExpense(b.dataset.id, rows));
-      expList.querySelectorAll('button.del').forEach(b => {
-        b.onclick = async () => {
-          const res2 = await fetch(`/api/expenses/${b.dataset.id}`, { method: 'DELETE' });
-          if (!res2.ok) return showError('Delete failed');
-          loadExpenses();
-        };
-      });
-    }
+$('#saveBtn').onclick = async ()=>{
+  const id=$('#exp_id').value.trim();
+  const body={
+    vendor:$('#vendor').value.trim(),
+    date:$('#date').value,
+    amount:$('#amount').value,
+    taxable:$('#taxable').value,
+    category:$('#category').value.trim(),
+    note:$('#note').value.trim()
+  };
+  const r=await fetch(id?`/api/expenses/${id}`:'/api/expenses',{
+    method: id?'PUT':'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  const out=await r.json();
+  if(!r.ok){ alert(out.error||'Save failed'); return; }
+  clearForm(); load();
+};
+$('#resetBtn').onclick = clearForm;
 
-    function editExpense(id, rows) {
-      const x = rows.find(r => String(r.id) === String(id));
-      if (!x) return;
-      expId.value = x.id;
-      document.getElementById('exp_vendor').value = x.vendor || '';
-      document.getElementById('exp_amount').value = x.amount;
-      document.getElementById('exp_taxable').checked = !!x.taxable;
-      expDate.value = x.date;
-      document.getElementById('exp_category').value = x.category || '';
-      document.getElementById('exp_note').value = x.note || '';
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+document.getElementById('tbl').addEventListener('click', async (e)=>{
+  const btn=e.target.closest('button'); if(!btn) return;
+  const id=btn.dataset.id; const tr=btn.closest('tr');
+  if(btn.classList.contains('edit')) rowToForm(tr,id);
+  else if(btn.classList.contains('del')){
+    if(!confirm('Delete this expense?')) return;
+    const r=await fetch(`/api/expenses/${id}`,{method:'DELETE'}); const out=await r.json();
+    if(!r.ok){ alert(out.error||'Delete failed'); return; }
+    load();
+  }
+});
 
-    expForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const payload = {
-        vendor: document.getElementById('exp_vendor').value.trim(),
-        amount: Number(document.getElementById('exp_amount').value),
-        taxable: document.getElementById('exp_taxable').checked,
-        date: expDate.value || null,
-        category: document.getElementById('exp_category').value.trim(),
-        note: document.getElementById('exp_note').value.trim()
-      };
-      if (isNaN(payload.amount)) return showError('Amount must be a number');
-      const id = expId.value;
-      const res = await fetch(id ? `/api/expenses/${id}` : '/api/expenses', {
-        method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-      });
-      if (!res.ok) return showError('Save failed');
-      resetForm(); loadExpenses();
-    });
-
-    expReset.onclick = resetForm;
-    resetForm(); loadExpenses();
-  </script>
+load();
+</script>
 </body>
 </html>

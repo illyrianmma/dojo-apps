@@ -1,49 +1,26 @@
-// server.js (complete)
+// server.js (final)
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const AdmZip = require("adm-zip");
-
-// Optional email/SMS (safe no-op if env not set)
-let sgMail = null, twilioClient = null;
-if (process.env.SENDGRID_API_KEY) {
-  try {
-    sgMail = require("@sendgrid/mail");
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-  } catch {}
-}
-if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
-  try {
-    const twilio = require("twilio");
-    twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
-  } catch {}
-}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ""; // set in Render → Environment
 
-// -------------------------------
-// Persistent data dir (Render Disk or local)
-// -------------------------------
+// Persistent data directory (Render uses /data)
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const dbFile = path.join(DATA_DIR, "dojo.db");
 const uploadsDir = path.join(DATA_DIR, "uploads");
-const tmpDir = path.join(DATA_DIR, "tmp");
-for (const d of [uploadsDir, tmpDir]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// -------------------------------
-// Parsers & static
-// -------------------------------
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public"), { maxAge: 0, etag: false }));
 app.use("/uploads", express.static(uploadsDir));
 
-// Friendly routes / redirects
+// Convenience routes so /page and /page.htm work
 const PAGES = ["index","students","payments","attendance","leads","expenses","accounting","dashboard","admin-tools","admin-import"];
 app.get("/", (req,res) => res.redirect("/index.html"));
 PAGES.forEach(name => {
@@ -53,9 +30,7 @@ PAGES.forEach(name => {
   app.get("/" + name + ".htm", (req,res) => res.redirect("/" + name + ".html"));
 });
 
-// -------------------------------
-// Multer (photo uploads -> persistent disk)
-// -------------------------------
+// --- uploads (photos) ---
 const photoStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
@@ -63,30 +38,17 @@ const photoStorage = multer.diskStorage({
     cb(null, Date.now() + "_" + safe);
   },
 });
-const imageFilter = (req, file, cb) =>
-  (/^image\//.test(file.mimetype) ? cb(null, true) : cb(new Error("Only image files")));
+const imageFilter = (req, file, cb) => (/^image\//.test(file.mimetype) ? cb(null, true) : cb(new Error("Only images")));
 const uploadPhoto = multer({ storage: photoStorage, fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Separate multer for admin file uploads (DB or ZIP → tmp)
-const fileStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, tmpDir),
-  filename: (req, file, cb) => {
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    cb(null, Date.now() + "_" + safe);
-  },
-});
-const uploadAny = multer({ storage: fileStorage, limits: { fileSize: 200 * 1024 * 1024 } }); // up to 200MB
-
-// -------------------------------
-// Database
-// -------------------------------
+// --- DB ---
 const db = new sqlite3.Database(dbFile, (err) => {
-  if (err) console.error("Error opening database:", err.message);
+  if (err) console.error("DB open error:", err.message);
   else console.log("Connected to SQLite database:", dbFile);
 });
 db.exec("PRAGMA foreign_keys = ON;");
 
-// Schema + simple auto-migrations
+// Schema (with auto-migrations)
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS students (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,101 +99,49 @@ db.serialize(() => {
     interested_program TEXT,
     follow_up_date TEXT,
     status TEXT,
-    notes TEXT,
-    created_at TEXT
+    notes TEXT
   )`);
+
+  // 🔧 Auto-migrate: add leads.created_at if missing (fixes your error)
+  db.all(`PRAGMA table_info(leads)`, [], (e, cols) => {
+    if (e) return;
+    const hasCreatedAt = cols.some(c => c.name === "created_at");
+    if (!hasCreatedAt) {
+      db.run(`ALTER TABLE leads ADD COLUMN created_at TEXT`, [], () => {
+        console.log("Auto-migrate: leads.created_at added");
+      });
+    }
+  });
 });
 
-// -------------------------------
 // Helpers
-// -------------------------------
-function addDays(dateISO, days) {
-  const d = new Date(dateISO);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-function todayISO() { return new Date().toISOString().slice(0, 10); }
-function cmpDays(aISO, bISO) {
-  return Math.floor((new Date(aISO) - new Date(bISO)) / 86400000);
-}
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function addDays(iso, n){ const d=new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function cmpDays(aISO,bISO){ return Math.floor((new Date(aISO)-new Date(bISO))/86400000); }
 
-// mail & sms (no-op if not configured)
-async function sendEmail(to, subject, text) {
-  if (!sgMail || !process.env.SENDGRID_FROM) {
-    console.log(`[email disabled] would send to ${to}: ${subject}`);
-    return { ok: false, skipped: true };
-  }
-  try {
-    await sgMail.send({ to, from: process.env.SENDGRID_FROM, subject, text });
-    return { ok: true };
-  } catch (e) {
-    console.error("sendEmail error:", e.message);
-    return { ok: false, error: e.message };
-  }
-}
-async function sendSMS(to, text) {
-  if (!twilioClient || !process.env.TWILIO_FROM) {
-    console.log(`[sms disabled] would text ${to}: ${text}`);
-    return { ok: false, skipped: true };
-  }
-  try {
-    const r = await twilioClient.messages.create({ to, from: process.env.TWILIO_FROM, body: text });
-    return { ok: true, sid: r.sid };
-  } catch (e) {
-    console.error("sendSMS error:", e.message);
-    return { ok: false, error: e.message };
-  }
-}
-function adminGuard(req, res) {
-  const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
-  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
-    res.status(403).json({ error: "Forbidden" }); return false;
-  }
-  return true;
-}
-
-// -------------------------------
 // Health
-// -------------------------------
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true, data_dir: DATA_DIR, port: PORT, has_admin: !!ADMIN_TOKEN });
-});
+app.get("/api/health", (req,res)=> res.json({ ok:true, data_dir:DATA_DIR, port:PORT }));
 
-// -------------------------------
-// API Routes
-// -------------------------------
-
-// ---- Students ----
-app.get("/api/students", (req, res) => {
+// ==================== STUDENTS ====================
+app.get("/api/students", (req,res)=>{
   const today = todayISO();
-  db.all("SELECT * FROM students ORDER BY name COLLATE NOCASE ASC, id DESC", [], (err, rows) => {
+  db.all("SELECT * FROM students ORDER BY name COLLATE NOCASE ASC, id DESC", [], (err, rows)=>{
     if (err) return res.status(500).json({ error: err.message });
-    const out = rows.map(r => {
-      const rd = r.renewal_date || "";
+    const out = rows.map(s=>{
+      const rd = s.renewal_date || "";
       let due_status = "ok";
       if (rd) {
         if (new Date(rd) < new Date(today)) due_status = "overdue";
         else if (cmpDays(rd, today) <= 3) due_status = "due_soon";
       }
-      return { ...r, due_status };
+      return {...s, due_status};
     });
     res.json(out);
   });
 });
 
-app.get("/api/students/due", (req, res) => {
-  const within = parseInt(req.query.within || "7", 10);
-  const max = addDays(todayISO(), within);
-  const sql = `SELECT * FROM students
-               WHERE COALESCE(renewal_date,'') <> '' AND renewal_date <= ?
-               ORDER BY renewal_date ASC`;
-  db.all(sql, [max], (err, rows) =>
-    err ? res.status(500).json({ error: err.message }) : res.json(rows)
-  );
-});
-
-// Create student
-app.post("/api/students", uploadPhoto.single("photo"), (req, res) => {
+// Create (auto-fill start=Today, renewal=+28 if blank)
+app.post("/api/students", uploadPhoto.single("photo"), (req,res)=>{
   let {
     name, first_name, last_name, phone, email, address, age,
     program, start_date, renewal_date, parent_name, parent_phone, notes
@@ -245,331 +155,239 @@ app.post("/api/students", uploadPhoto.single("photo"), (req, res) => {
   const sql = `INSERT INTO students
     (name, phone, email, address, age, program, start_date, renewal_date, parent_name, parent_phone, notes, photo)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
   db.run(sql, [
-    name || null, phone || null, email || null, address || null,
-    age || null, program || null, start, renewal,
-    parent_name || null, parent_phone || null, notes || null, photoPath
-  ],
-  function (err) {
+    name||null, phone||null, email||null, address||null, age||null, program||null,
+    start, renewal, parent_name||null, parent_phone||null, notes||null, photoPath
+  ], function(err){
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ id: this.lastID, name, start_date: start, renewal_date: renewal, photo: photoPath });
+    res.json({ id:this.lastID, name, start_date:start, renewal_date:renewal, photo:photoPath });
   });
 });
 
-// Update student
-app.put("/api/students/:id", uploadPhoto.single("photo"), (req, res) => {
+// Update
+app.put("/api/students/:id", uploadPhoto.single("photo"), (req,res)=>{
   let {
     name, first_name, last_name, phone, email, address, age,
     program, start_date, renewal_date, parent_name, parent_phone, notes
   } = req.body;
-
   if (!name) name = [first_name, last_name].filter(Boolean).join(" ").trim();
   const start = (start_date && String(start_date).trim()) ? String(start_date).slice(0,10) : todayISO();
   const renewal = (renewal_date && String(renewal_date).trim()) ? String(renewal_date).slice(0,10) : addDays(start, 28);
   const photoPath = req.file ? "/uploads/" + req.file.filename : null;
 
   const sql = "UPDATE students SET " +
-    "name=?, phone=?, email=?, address=?, age=?, program=?, start_date=?, renewal_date=?," +
+    "name=?, phone=?, email=?, address=?, age=?, program=?, start_date=?, renewal_date=?, " +
     "parent_name=?, parent_phone=?, notes=?" + (photoPath ? ", photo=?" : "") +
     " WHERE id=?";
-
   const params = [
-    name || null, phone || null, email || null, address || null,
-    age || null, program || null, start, renewal,
-    parent_name || null, parent_phone || null, notes || null
+    name||null, phone||null, email||null, address||null, age||null, program||null, start, renewal,
+    parent_name||null, parent_phone||null, notes||null
   ];
   if (photoPath) params.push(photoPath);
   params.push(req.params.id);
 
-  db.run(sql, params, function (err) {
+  db.run(sql, params, function(err){
     if (err) return res.status(500).json({ error: err.message });
     res.json({ updated: this.changes });
   });
 });
 
-// Delete student
-app.delete("/api/students/:id", (req, res) => {
-  db.run("DELETE FROM students WHERE id = ?", [req.params.id], function (err) {
+// Delete
+app.delete("/api/students/:id", (req,res)=>{
+  db.run("DELETE FROM students WHERE id=?", [req.params.id], function(err){
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: "Student " + req.params.id + " and related records deleted." });
+    res.json({ deleted: this.changes });
   });
 });
 
-// ---- Payments ----
-app.get("/api/payments", (req, res) => {
-  const sql = "SELECT payments.*, students.name AS student_name " +
-              "FROM payments LEFT JOIN students ON payments.student_id = students.id " +
-              "ORDER BY date DESC, payments.id DESC";
-  db.all(sql, [], (err, rows) =>
-    err ? res.status(500).json({ error: err.message }) : res.json(rows)
-  );
+// ==================== PAYMENTS (income) ====================
+app.get("/api/payments", (req,res)=>{
+  const sql = `SELECT payments.*, students.name AS student_name
+               FROM payments LEFT JOIN students ON payments.student_id = students.id
+               ORDER BY date DESC, payments.id DESC`;
+  db.all(sql, [], (err,rows)=> err ? res.status(500).json({error:err.message}) : res.json(rows));
 });
 
-// summary: ?from=YYYY-MM-DD&to=YYYY-MM-DD (optional)
-app.get("/api/payments/summary", (req, res) => {
+// Summary income (taxable/nontax/all)
+app.get("/api/payments/summary", (req,res)=>{
   const { from, to } = req.query;
-  const cond = [], params = [];
-  if (from) { cond.push("date >= ?"); params.push(from); }
-  if (to)   { cond.push("date <= ?"); params.push(to); }
-  const where = cond.length ? ("WHERE " + cond.join(" AND ")) : "";
+  const cond=[], p=[];
+  if (from) { cond.push("date >= ?"); p.push(from); }
+  if (to)   { cond.push("date <= ?"); p.push(to); }
+  const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
   const sql = `
     SELECT
-      SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END) AS taxable_total,
-      SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END) AS nontax_total,
-      SUM(amount) AS grand_total
-    FROM payments ${where}
-  `;
-  db.get(sql, params, (err, row) =>
-    err ? res.status(500).json({ error: err.message }) :
-    res.json({
-      taxable_total: row.taxable_total || 0,
-      nontax_total: row.nontax_total || 0,
-      grand_total: row.grand_total || 0
-    })
-  );
+      COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS taxable_total,
+      COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS nontax_total,
+      COALESCE(SUM(amount),0) AS grand_total
+    FROM payments ${where}`;
+  db.get(sql, p, (err,row)=> err ? res.status(500).json({error:err.message}) : res.json(row));
 });
 
-app.post("/api/payments", async (req, res) => {
+app.post("/api/payments", (req,res)=>{
   const { student_id, date, amount, method, taxable, note } = req.body;
-  db.run(
-    "INSERT INTO payments (student_id, date, amount, method, taxable, note) VALUES (?, ?, ?, ?, ?, ?)",
+  db.run("INSERT INTO payments (student_id, date, amount, method, taxable, note) VALUES (?, ?, ?, ?, ?, ?)",
     [student_id, date, amount, method, taxable, note],
-    async function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-
-      // send receipt (best-effort; non-blocking)
-      const pid = this.lastID;
-      db.get("SELECT name, email, phone FROM students WHERE id = ?", [student_id], async (e, stu) => {
-        if (!e && stu) {
-          const msgText = `Receipt: ${stu.name}\nDate: ${date}\nAmount: $${Number(amount).toFixed(2)}\nMethod: ${method}\nThank you!`;
-          if (stu.email) await sendEmail(stu.email, "Membership Payment Receipt", msgText);
-          if (stu.phone) await sendSMS(stu.phone, msgText);
-        }
-      });
-
-      res.json({ id: pid });
-    }
-  );
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
 });
 
-app.delete("/api/payments/:id", (req, res) => {
-  db.run("DELETE FROM payments WHERE id = ?", [req.params.id], function (err) {
+app.delete("/api/payments/:id", (req,res)=>{
+  db.run("DELETE FROM payments WHERE id=?", [req.params.id], function(err){
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: "Payment " + req.params.id + " deleted." });
+    res.json({ deleted: this.changes });
   });
 });
 
-// ---- Expenses ----
-app.get("/api/expenses", (req, res) => {
-  db.all("SELECT * FROM expenses ORDER BY date DESC, id DESC", [], (err, rows) =>
-    err ? res.status(500).json({ error: err.message }) : res.json(rows)
-  );
-});
-app.post("/api/expenses", (req, res) => {
-  const { vendor, date, amount, taxable, category, note } = req.body;
-  db.run(
-    "INSERT INTO expenses (vendor, date, amount, taxable, category, note) VALUES (?, ?, ?, ?, ?, ?)",
-    [vendor, date, amount, taxable, category, note],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+// ==================== EXPENSES ====================
+app.get("/api/expenses", (req,res)=>{
+  db.all("SELECT * FROM expenses ORDER BY date DESC, id DESC", [], (err,rows)=> err?res.status(500).json({error:err.message}):res.json(rows));
 });
 
-// ---- Leads ----
-app.get("/api/leads", (req, res) => {
-  db.all("SELECT * FROM leads ORDER BY id DESC", [], (err, rows) => {
+// NEW: expenses summary (taxable/nontax/all)
+app.get("/api/expenses/summary", (req,res)=>{
+  const { from, to } = req.query;
+  const cond=[], p=[];
+  if (from) { cond.push("date >= ?"); p.push(from); }
+  if (to)   { cond.push("date <= ?"); p.push(to); }
+  const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
+  const sql = `
+    SELECT
+      COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS taxable_total,
+      COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS nontax_total,
+      COALESCE(SUM(amount),0) AS grand_total
+    FROM expenses ${where}`;
+  db.get(sql, p, (err,row)=> err ? res.status(500).json({error:err.message}) : res.json(row));
+});
+
+app.post("/api/expenses", (req,res)=>{
+  const { vendor, date, amount, taxable, category, note } = req.body;
+  db.run("INSERT INTO expenses (vendor, date, amount, taxable, category, note) VALUES (?, ?, ?, ?, ?, ?)",
+    [vendor, date, amount, taxable, category, note],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
+});
+
+// 🔧 FIX: Edit (save) expenses
+app.put("/api/expenses/:id", (req,res)=>{
+  const { vendor, date, amount, taxable, category, note } = req.body;
+  db.run("UPDATE expenses SET vendor=?, date=?, amount=?, taxable=?, category=?, note=? WHERE id=?",
+    [vendor, date, amount, taxable, category, note, req.params.id],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
+});
+
+// 🔧 FIX: Delete expenses
+app.delete("/api/expenses/:id", (req,res)=>{
+  db.run("DELETE FROM expenses WHERE id=?", [req.params.id],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ deleted:this.changes });});
+});
+
+// ==================== LEADS ====================
+app.get("/api/leads", (req,res)=>{
+  db.all("SELECT * FROM leads ORDER BY id DESC", [], (err,rows)=>{
     if (err) return res.status(500).json({ error: err.message });
     const today = todayISO();
-    const out = rows.map(r => {
+    const out = rows.map(r=>{
       const created = r.created_at || today;
-      const age_days = Math.max(0, Math.floor((new Date(today) - new Date(created)) / 86400000));
+      const age_days = Math.max(0, Math.floor((new Date(today)-new Date(created))/86400000));
       return { ...r, age_days };
     });
     res.json(out);
   });
 });
-app.post("/api/leads", (req, res) => {
+
+app.post("/api/leads", (req,res)=>{
   const { name, phone, email, interested_program, follow_up_date, status, notes } = req.body;
-  db.run(
-    "INSERT INTO leads (name, phone, email, interested_program, follow_up_date, status, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  db.run(`INSERT INTO leads (name, phone, email, interested_program, follow_up_date, status, notes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [name, phone, email, interested_program, follow_up_date, status, notes, todayISO()],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
-    }
-  );
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
 });
-app.patch("/api/leads/:id", (req, res) => {
+
+// NEW: full update (edit) for leads
+app.put("/api/leads/:id", (req,res)=>{
+  const { name, phone, email, interested_program, follow_up_date, status, notes } = req.body;
+  db.run(`UPDATE leads SET name=?, phone=?, email=?, interested_program=?, follow_up_date=?, status=?, notes=? WHERE id=?`,
+    [name, phone, email, interested_program, follow_up_date, status, notes, req.params.id],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
+});
+
+// Keep PATCH too (status/notes quick change)
+app.patch("/api/leads/:id", (req,res)=>{
   const { status, notes } = req.body;
-  db.run(
-    "UPDATE leads SET status = COALESCE(?, status), notes = COALESCE(?, notes) WHERE id = ?",
-    [status || null, notes || null, req.params.id],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ updated: this.changes });
-    }
-  );
-});
-app.delete("/api/leads/:id", (req, res) => {
-  db.run("DELETE FROM leads WHERE id = ?", [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ deleted: this.changes });
-  });
+  db.run("UPDATE leads SET status=COALESCE(?,status), notes=COALESCE(?,notes) WHERE id=?",
+    [status||null, notes||null, req.params.id],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
 });
 
-// ---- Attendance ----
-app.get("/api/attendance", (req, res) => {
-  const sql =
-    "SELECT " +
-    "  attendance.id, attendance.student_id, attendance.date, attendance.present, " +
-    "  COALESCE(students.name, 'ID ' || attendance.student_id) AS student_name " +
-    "FROM attendance " +
-    "LEFT JOIN students ON attendance.student_id = students.id " +
-    "ORDER BY attendance.date DESC, attendance.id DESC";
-  db.all(sql, [], (err, rows) =>
-    err ? res.status(500).json({ error: err.message }) : res.json(rows)
-  );
+// 🔧 delete leads
+app.delete("/api/leads/:id", (req,res)=>{
+  db.run("DELETE FROM leads WHERE id=?", [req.params.id],
+    function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ deleted:this.changes });});
 });
-app.post("/api/attendance", (req, res) => {
+
+// ==================== ATTENDANCE (unchanged logic) ====================
+app.get("/api/attendance", (req,res)=>{
+  const sql = `SELECT a.id,a.student_id,a.date,a.present,COALESCE(s.name,'ID '||a.student_id) AS student_name
+               FROM attendance a LEFT JOIN students s ON a.student_id=s.id
+               ORDER BY a.date DESC, a.id DESC`;
+  db.all(sql, [], (err,rows)=> err?res.status(500).json({error:err.message}):res.json(rows));
+});
+app.post("/api/attendance", (req,res)=>{
   let { student_id, date, present } = req.body;
-  const sid = parseInt(student_id, 10);
-  const pres = (present === 1 || present === "1" || present === true || present === "true") ? 1 : 0;
+  const sid = parseInt(student_id,10);
+  const pres = (present==1 || present==="1" || present===true || present==="true") ? 1 : 0;
   const d = (date && String(date).trim()) ? String(date).slice(0,10) : todayISO();
-  if (!Number.isFinite(sid)) return res.status(400).json({ error: "student_id is required" });
+  if (!Number.isFinite(sid)) return res.status(400).json({ error:"student_id is required" });
 
-  db.get("SELECT id FROM students WHERE id = ?", [sid], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!row) return res.status(400).json({ error: "Student " + sid + " not found" });
+  db.get("SELECT id FROM students WHERE id=?", [sid], (e,row)=>{
+    if (e) return res.status(500).json({ error:e.message });
+    if (!row) return res.status(400).json({ error:"Student "+sid+" not found" });
 
-    db.run("INSERT INTO attendance (student_id, date, present) VALUES (?, ?, ?)",
-      [sid, d, pres],
-      function (err2) {
-        if (err2) return res.status(500).json({ error: err2.message });
-        db.get(
-          "SELECT attendance.id, attendance.student_id, attendance.date, attendance.present, " +
-          "COALESCE(students.name, 'ID ' || attendance.student_id) AS student_name " +
-          "FROM attendance LEFT JOIN students ON attendance.student_id = students.id " +
-          "WHERE attendance.id = ?",
-          [this.lastID],
-          (err3, row2) => {
-            if (err3) return res.status(500).json({ error: err3.message });
-            res.json(row2);
-          }
-        );
-      }
-    );
-  });
-});
-app.delete("/api/attendance/:id", (req, res) => {
-  db.run("DELETE FROM attendance WHERE id = ?", [req.params.id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ deleted: this.changes });
-  });
-});
-
-// -------------------------------
-// ADMIN: backup/export + IMPORT (token required)
-// -------------------------------
-function checkAdmin(req, res) {
-  const token = req.headers["x-admin-token"] || req.query.token || req.body.token;
-  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
-    res.status(403).json({ error: "Forbidden" });
-    return false;
-  }
-  return true;
-}
-
-// Backup DB
-app.get("/admin/backup/db", (req, res) => {
-  if (!checkAdmin(req, res)) return;
-  res.download(dbFile, "dojo.db");
-});
-
-// Export CSV
-app.get("/admin/export/csv", (req, res) => {
-  if (!checkAdmin(req, res)) return;
-  const allowed = new Set(["students","payments","expenses","leads","attendance"]);
-  const table = String(req.query.table || "").toLowerCase();
-  if (!allowed.has(table)) return res.status(400).json({ error: "invalid table" });
-
-  db.all(`SELECT * FROM ${table}`, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    const cols = rows.length ? Object.keys(rows[0]) : [];
-    const csv = [cols.join(",")].concat(
-      rows.map(r => cols.map(c => {
-        const v = r[c] == null ? "" : String(r[c]);
-        return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v;
-      }).join(","))
-    ).join("\n");
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="${table}.csv"`);
-    res.send(csv);
-  });
-});
-
-// IMPORT: replace DB file safely
-app.post("/admin/replace-db", uploadAny.single("file"), (req, res) => {
-  if (!checkAdmin(req, res)) return;
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-  const tempPath = req.file.path;
-  db.close((err) => {
-    if (err) return res.status(500).json({ error: "Close DB error: " + err.message });
-    try {
-      fs.copyFileSync(tempPath, dbFile);
-      fs.unlinkSync(tempPath);
-    } catch (e) {
-      return res.status(500).json({ error: "Copy DB error: " + e.message });
-    }
-    // reopen DB
-    const reopened = new sqlite3.Database(dbFile, (e2) => {
-      if (e2) return res.status(500).json({ error: "Reopen DB error: " + e2.message });
-      reopened.exec("PRAGMA foreign_keys = ON;");
-      res.json({ ok: true, message: "Database replaced" });
+    db.run("INSERT INTO attendance (student_id,date,present) VALUES (?,?,?)", [sid,d,pres], function(err2){
+      if (err2) return res.status(500).json({ error: err2.message });
+      db.get(`SELECT a.id,a.student_id,a.date,a.present,COALESCE(s.name,'ID '||a.student_id) AS student_name
+              FROM attendance a LEFT JOIN students s ON a.student_id=s.id WHERE a.id=?`,
+        [this.lastID],
+        (e2,row2)=> e2?res.status(500).json({error:e2.message}):res.json(row2));
     });
   });
 });
-
-// IMPORT: upload ZIP of uploads/ and extract
-app.post("/admin/upload-uploads-zip", uploadAny.single("zip"), (req, res) => {
-  if (!checkAdmin(req, res)) return;
-  if (!req.file) return res.status(400).json({ error: "No zip uploaded" });
-
-  try {
-    const zip = new AdmZip(req.file.path);
-    zip.extractAllTo(uploadsDir, true);
-    fs.unlinkSync(req.file.path);
-    res.json({ ok: true, message: "Uploads extracted to " + uploadsDir });
-  } catch (e) {
-    res.status(500).json({ error: "Unzip failed: " + e.message });
-  }
-});
-
-// -------------------------------
-// TASK: daily reminders (due in 3 days) — pair with a Cron job if desired
-// -------------------------------
-app.post("/api/tasks/due-reminders", async (req, res) => {
-  if (!adminGuard(req, res)) return;
-  const target = addDays(todayISO(), 3);
-  db.all("SELECT * FROM students WHERE renewal_date = ?", [target], async (err, rows) => {
+app.delete("/api/attendance/:id", (req,res)=>{
+  db.run("DELETE FROM attendance WHERE id=?", [req.params.id], function(err){
     if (err) return res.status(500).json({ error: err.message });
-    let sent = 0;
-    for (const s of rows) {
-      const msg = `Hi ${s.name || ""}, reminder: your membership renews on ${s.renewal_date}. See you at the dojo!`;
-      if (s.email) { const r = await sendEmail(s.email, "Membership Renewal Reminder", msg); if (r.ok) sent++; }
-      if (s.phone) { const r = await sendSMS(s.phone, msg); if (r.ok) sent++; }
-    }
-    res.json({ checked: rows.length, notifications_sent: sent });
+    res.json({ deleted:this.changes });
   });
 });
 
-// -------------------------------
-// Start server (Render needs 0.0.0.0)
-// -------------------------------
-app.listen(PORT, "0.0.0.0", () => {
+// ==================== ACCOUNTING COMBINED (optional helper) ====================
+app.get("/api/accounting/summary", (req,res)=>{
+  const { from, to } = req.query;
+  const run = (sql, params)=> new Promise((resolve,reject)=>{
+    db.get(sql, params, (e,row)=> e?reject(e):resolve(row||{}));
+  });
+  const cond=[], p=[];
+  if (from){ cond.push("date >= ?"); p.push(from); }
+  if (to){ cond.push("date <= ?"); p.push(to); }
+  const where = cond.length ? ("WHERE "+cond.join(" AND ")) : "";
+  const paySQL = `SELECT
+    COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS income_taxable,
+    COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS income_nontax,
+    COALESCE(SUM(amount),0) AS income_total
+    FROM payments ${where}`;
+  const expSQL = `SELECT
+    COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS expense_taxable,
+    COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS expense_nontax,
+    COALESCE(SUM(amount),0) AS expense_total
+    FROM expenses ${where}`;
+  Promise.all([run(paySQL,p), run(expSQL,p)]).then(([i,e])=>{
+    res.json({
+      ...i, ...e,
+      net_total: (i.income_total||0) - (e.expense_total||0)
+    });
+  }).catch(err=> res.status(500).json({ error: err.message }));
+});
+
+// --- start ---
+app.listen(PORT, "0.0.0.0", ()=>{
   console.log(">>> server.js started <<<");
   console.log("Server running on port " + PORT + " (data at " + DATA_DIR + ")");
 });

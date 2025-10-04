@@ -1,190 +1,137 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <title>Leads</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 1000px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    label { display:block; margin-top:8px; font-size:14px; }
-    input, select, textarea { width:100%; padding:8px; box-sizing:border-box; }
-    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
-    .actions { margin-top:10px; display:flex; gap:8px; }
-    table { width:100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
-    th { background:#f9f9f9; }
-    .msg { margin:8px 0; }
-    .ok{color:#137333} .err{color:#b00020}
+    body{font-family:system-ui,Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:8px;text-align:left}
+    th{background:#f5f5f5}
+    .row{display:flex;gap:16px;flex-wrap:wrap}
+    .card{flex:1 1 420px;border:1px solid #ddd;border-radius:10px;padding:12px}
+    input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
+    tr.lead-warn{background:#fff9db}   /* >=7 days and not contacted */
+    tr.lead-danger{background:#ffe5e5} /* >=14 days and not contacted */
+    .actions button{width:auto;margin-right:6px}
   </style>
 </head>
 <body>
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h1>Leads</h1>
-    <a href="index.html">← Back to Main Page</a>
+  <h1>Leads</h1>
+  <p><a href="/index.html">Back to Main</a></p>
+
+  <div class="row">
+    <div class="card">
+      <h2>Add / Edit Lead</h2>
+      <input type="hidden" id="lead_id" />
+      <label>Name</label><input id="name" />
+      <label>Phone</label><input id="phone" />
+      <label>Email</label><input id="email" />
+      <label>Interested Program</label><input id="interested_program" />
+      <label>Follow Up Date</label><input type="date" id="follow_up_date" />
+      <label>Status</label>
+      <select id="status">
+        <option value="">New</option>
+        <option>Contacted</option>
+        <option>Enrolled</option>
+        <option>Not Interested</option>
+      </select>
+      <label>Notes</label><textarea id="notes" rows="3"></textarea>
+      <button id="saveBtn">Save Lead</button>
+      <button id="resetBtn" type="button">Reset</button>
+    </div>
+
+    <div class="card">
+      <h2>Lead List</h2>
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Age (days)</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
-  <div id="msg" class="msg"></div>
-
-  <form id="leadForm">
-    <div class="row">
-      <div>
-        <label for="name">Name</label>
-        <input id="name" required />
-      </div>
-      <div>
-        <label for="phone">Phone</label>
-        <input id="phone" />
-      </div>
-      <div>
-        <label for="email">Email</label>
-        <input id="email" type="email" />
-      </div>
-      <div>
-        <label for="interested_program">Interested Program</label>
-        <input id="interested_program" />
-      </div>
-      <div>
-        <label for="follow_up_date">Follow-up Date</label>
-        <input id="follow_up_date" type="date" />
-      </div>
-      <div>
-        <label for="status">Status</label>
-        <select id="status">
-          <option>New</option>
-          <option>Contacted</option>
-          <option>Trial</option>
-          <option>Enrolled</option>
-          <option>Lost</option>
-        </select>
-      </div>
-      <div style="grid-column:1 / -1">
-        <label for="notes">Notes</label>
-        <input id="notes" />
-      </div>
-    </div>
-    <div class="actions">
-      <button type="submit">Add Lead</button>
-      <button type="reset">Reset</button>
-    </div>
-  </form>
-
-  <table id="leadsTable">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Name / Contact</th>
-        <th>Interest</th>
-        <th>Follow-up</th>
-        <th>Status</th>
-        <th>Notes</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="leadsBody">
-      <tr><td colspan="7">Loading…</td></tr>
-    </tbody>
-  </table>
-
 <script>
-const $ = (id)=>document.getElementById(id);
-const msg=(t,ok=false)=>{const m=$('msg');m.className='msg '+(ok?'ok':'err');m.textContent=t;if(ok)setTimeout(()=>{m.textContent='';m.className='msg';},1800);};
-
-async function loadLeads(){
-  const tbody=$('leadsBody'); tbody.innerHTML='<tr><td colspan="7">Loading…</td></tr>';
-  try{
-    const res=await fetch('/api/leads'); const data=await res.json();
-    if(!Array.isArray(data)||data.length===0){tbody.innerHTML='<tr><td colspan="7">No leads yet.</td></tr>';return;}
-    tbody.innerHTML='';
-    for(const L of data){
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${L.id}</td>
-        <td>${L.name||''}<br>${[L.phone,L.email].filter(Boolean).join('<br>')}</td>
-        <td>${L.interested_program||''}</td>
-        <td>${L.follow_up_date||''}</td>
-        <td>${L.status||'New'}</td>
-        <td>${L.notes||''}</td>
-        <td>
-          <button class="enroll" data-id="${L.id}">Enroll as Student</button>
-          <button class="status" data-id="${L.id}" data-next="Contacted">Mark Contacted</button>
-          <button class="del" data-id="${L.id}">Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    }
-  }catch(e){tbody.innerHTML=`<tr><td colspan="7" class="err">Error: ${e.message}</td></tr>`;}
-}
-
-async function submitLead(e){
-  e.preventDefault();
-  const body={
-    name:$('name').value, phone:$('phone').value, email:$('email').value,
-    interested_program:$('interested_program').value, follow_up_date:$('follow_up_date').value,
-    status:$('status').value, notes:$('notes').value
+function esc(s){return String(s??"")}
+function clearForm(){ document.querySelectorAll('#lead_id,#name,#phone,#email,#interested_program,#follow_up_date,#status,#notes')
+  .forEach(el=> el.value=""); }
+function formData(){
+  return {
+    name:$('#name').value.trim(),
+    phone:$('#phone').value.trim(),
+    email:$('#email').value.trim(),
+    interested_program:$('#interested_program').value.trim(),
+    follow_up_date:$('#follow_up_date').value,
+    status:$('#status').value,
+    notes:$('#notes').value.trim()
   };
-  try{
-    const res=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const out=await res.json(); if(!res.ok) throw new Error(out.error||'Save failed');
-    msg('Lead added.',true); $('leadForm').reset(); await loadLeads();
-  }catch(e){msg(e.message);}
+}
+const $=sel=>document.querySelector(sel);
+
+async function load(){
+  const tb=$('#tbl tbody'); tb.innerHTML='<tr><td colspan="7">Loading…</td></tr>';
+  const res=await fetch('/api/leads'); const rows=await res.json();
+  if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="7">No leads</td></tr>';return;}
+  tb.innerHTML='';
+  rows.forEach(l=>{
+    const tr=document.createElement('tr');
+    const contacted = (l.status||'').toLowerCase()==='contacted' || (l.status||'').toLowerCase()==='enrolled';
+    if(!contacted){
+      if((l.age_days||0) >= 14) tr.classList.add('lead-danger');
+      else if((l.age_days||0) >= 7) tr.classList.add('lead-warn');
+    }
+    tr.innerHTML = `
+      <td>${esc(l.name)}</td>
+      <td>${esc(l.phone||'')}</td>
+      <td>${esc(l.email||'')}</td>
+      <td>${esc(l.interested_program||'')}</td>
+      <td>${esc(l.age_days||0)}</td>
+      <td>${esc(l.status||'')}</td>
+      <td class="actions">
+        <button data-id="${l.id}" class="edit">Edit</button>
+        <button data-id="${l.id}" class="del">Delete</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
 }
 
-async function handleTableClick(e){
-  const id=e.target.dataset.id; if(!id) return;
+document.getElementById('saveBtn').onclick = async ()=>{
+  const id = $('#lead_id').value.trim();
+  const body = formData();
+  const opts = { method: id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) };
+  const url = id ? `/api/leads/${id}` : '/api/leads';
+  const r=await fetch(url, opts); const out=await r.json();
+  if(!r.ok){ alert(out.error || 'Save failed'); return; }
+  clearForm(); load();
+};
+document.getElementById('resetBtn').onclick = clearForm;
 
-  if(e.target.classList.contains('del')){
-    if(!confirm(`Delete lead ${id}?`)) return;
-    try{
-      const res=await fetch(`/api/leads/${id}`,{method:'DELETE'});
-      const out=await res.json(); if(!res.ok) throw new Error(out.error||'Delete failed');
-      msg(`Deleted lead ${id}.`,true); await loadLeads();
-    }catch(err){msg(err.message);}
+document.getElementById('tbl').addEventListener('click', async (e)=>{
+  const btn=e.target.closest('button'); if(!btn) return;
+  const id=btn.dataset.id;
+  if(btn.classList.contains('edit')){
+    // load row into form
+    const tr=btn.closest('tr'); const tds=[...tr.children];
+    $('#lead_id').value = id;
+    $('#name').value = tds[0].textContent;
+    $('#phone').value = tds[1].textContent;
+    $('#email').value = tds[2].textContent;
+    $('#interested_program').value = tds[3].textContent;
+    $('#status').value = tds[5].textContent || '';
+    // follow_up_date & notes need fetch (optional); leaving as-is
+  } else if(btn.classList.contains('del')){
+    if(!confirm('Delete this lead?')) return;
+    const r=await fetch(`/api/leads/${id}`, {method:'DELETE'}); const out=await r.json();
+    if(!r.ok){ alert(out.error||'Delete failed'); return; }
+    load();
   }
+});
 
-  if(e.target.classList.contains('status')){
-    const next=e.target.dataset.next||'Contacted';
-    try{
-      const res=await fetch(`/api/leads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:next})});
-      const out=await res.json(); if(!res.ok) throw new Error(out.error||'Update failed');
-      msg(`Lead ${id} marked ${next}.`,true); await loadLeads();
-    }catch(err){msg(err.message);}
-  }
-
-  if(e.target.classList.contains('enroll')){
-    try{
-      const all = await (await fetch('/api/leads')).json();
-      const lead = all.find(x=>String(x.id)===String(id));
-      if(!lead) throw new Error('Lead not found');
-
-      const today = new Date();
-      const start = today.toISOString().slice(0,10);
-      const renewal = new Date(today.getTime() + 28*86400000).toISOString().slice(0,10);
-
-      const studentBody = {
-        name: lead.name || '',
-        phone: lead.phone || '',
-        email: lead.email || '',
-        program: lead.interested_program || '',
-        start_date: start,
-        renewal_date: renewal
-      };
-
-      const resS = await fetch('/api/students',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(studentBody)});
-      const outS = await resS.json(); if(!resS.ok) throw new Error(outS.error||'Enroll failed');
-
-      await fetch(`/api/leads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Enrolled'})});
-
-      msg(`Enrolled lead ${id} → student ${outS.id}.`,true);
-      await loadLeads();
-    }catch(err){msg(err.message);}
-  }
-}
-
-$('leadForm').addEventListener('submit', submitLead);
-$('leadsTable').addEventListener('click', handleTableClick);
-loadLeads();
+load();
 </script>
 </body>
 </html>
