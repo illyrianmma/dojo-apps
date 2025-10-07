@@ -10,6 +10,8 @@
     .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #bbb;margin-right:8px}
     label{display:inline-block;margin:6px 8px 6px 0}
     input,button{padding:8px;margin:6px 4px}
+    #err{white-space:pre-wrap;color:#b00020;background:#fff5f5;border:1px solid #f3caca;padding:8px;border-radius:8px;display:none}
+    #stats{font-size:.9rem;color:#666}
   </style>
 </head>
 <body>
@@ -22,7 +24,9 @@
       <label>To <input type="date" id="to"></label>
       <button type="submit">Apply</button>
       <button type="button" id="clear">Clear</button>
+      <span id="stats"></span>
     </form>
+    <div id="err"></div>
   </div>
 
   <div class="card">
@@ -47,27 +51,47 @@
 <script>
 function $$(id){return document.getElementById(id)}
 function money(n){return (+n||0).toFixed(2)}
+function showErr(msg){ const e=$$('err'); e.style.display='block'; e.textContent=msg; }
+
+async function jsonOrThrow(r){
+  let t; try{ t=await r.json(); }catch{ throw new Error('Invalid JSON from '+r.url); }
+  if(!r.ok) throw new Error((t&&t.error)||('HTTP '+r.status+' '+r.url));
+  return t;
+}
+
+function qs(){
+  const p=new URLSearchParams();
+  const f=$$('from').value, t=$$('to').value;
+  if(f) p.set('from',f); if(t) p.set('to',t);
+  return p.toString() ? '?'+p.toString() : '';
+}
 
 async function load(){
-  const qs=new URLSearchParams();
-  const f=$$('from').value, t=$$('to').value;
-  if(f) qs.set('from',f); if(t) qs.set('to',t);
+  $$('err').style.display='none';
+  $$('stats').textContent='Loading…';
+  try{
+    // tiny diagnostics (counts)
+    const st = await fetch('/api/accounting/stats').then(jsonOrThrow);
+    $$('stats').textContent = `(payments: ${st.payments.payments_count||0}, expenses: ${st.expenses.expenses_count||0})`;
 
-  const [inc, exp, all] = await Promise.all([
-    fetch('/api/payments/summary'+(qs.toString()?('?'+qs.toString()):'')).then(r=>r.json()),
-    fetch('/api/expenses/summary'+(qs.toString()?('?'+qs.toString()):'')).then(r=>r.json()),
-    fetch('/api/accounting/summary'+(qs.toString()?('?'+qs.toString()):'')).then(r=>r.json())
-  ]);
+    const [inc, exp, all] = await Promise.all([
+      fetch('/api/payments/summary'+qs()).then(jsonOrThrow),
+      fetch('/api/expenses/summary'+qs()).then(jsonOrThrow),
+      fetch('/api/accounting/summary'+qs()).then(jsonOrThrow)
+    ]);
 
-  $$('i_tax').textContent = money(inc.taxable_total);
-  $$('i_nontax').textContent = money(inc.nontax_total);
-  $$('i_total').textContent = money(inc.grand_total);
+    $$('i_tax').textContent = money(inc.taxable_total);
+    $$('i_nontax').textContent = money(inc.nontax_total);
+    $$('i_total').textContent = money(inc.grand_total);
 
-  $$('e_tax').textContent = money(exp.taxable_total);
-  $$('e_nontax').textContent = money(exp.nontax_total);
-  $$('e_total').textContent = money(exp.grand_total);
+    $$('e_tax').textContent = money(exp.taxable_total);
+    $$('e_nontax').textContent = money(exp.nontax_total);
+    $$('e_total').textContent = money(exp.grand_total);
 
-  $$('net_total').textContent = money(all.net_total);
+    $$('net_total').textContent = money(all.net_total);
+  }catch(err){
+    showErr(err.message);
+  }
 }
 
 document.getElementById('range').addEventListener('submit', (e)=>{e.preventDefault(); load();});

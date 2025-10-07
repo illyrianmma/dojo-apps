@@ -1,4 +1,4 @@
-// server.js (stable build)
+// server.js (accounting fixes + diagnostics)
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
@@ -208,7 +208,7 @@ app.get("/api/payments", (req,res)=>{
   db.all(sql, [], (err,rows)=> err ? res.status(500).json({error:err.message}) : res.json(rows));
 });
 
-// Summary income (taxable/nontax/all)
+// Summary income (taxable/nontax/all) — CAST to REAL to be safe
 app.get("/api/payments/summary", (req,res)=>{
   const { from, to } = req.query;
   const cond=[], p=[];
@@ -217,9 +217,9 @@ app.get("/api/payments/summary", (req,res)=>{
   const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
   const sql = `
     SELECT
-      COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS taxable_total,
-      COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS nontax_total,
-      COALESCE(SUM(amount),0) AS grand_total
+      COALESCE(SUM(CASE WHEN taxable=1 THEN CAST(amount AS REAL) ELSE 0 END),0) AS taxable_total,
+      COALESCE(SUM(CASE WHEN taxable=0 THEN CAST(amount AS REAL) ELSE 0 END),0) AS nontax_total,
+      COALESCE(SUM(CAST(amount AS REAL)),0) AS grand_total
     FROM payments ${where}`;
   db.get(sql, p, (err,row)=> err ? res.status(500).json({error:err.message}) : res.json(row));
 });
@@ -243,7 +243,7 @@ app.get("/api/expenses", (req,res)=>{
   db.all("SELECT * FROM expenses ORDER BY date DESC, id DESC", [], (err,rows)=> err?res.status(500).json({error:err.message}):res.json(rows));
 });
 
-// NEW: expenses summary (taxable/nontax/all)
+// Summary expenses (taxable/nontax/all) — CAST to REAL to be safe
 app.get("/api/expenses/summary", (req,res)=>{
   const { from, to } = req.query;
   const cond=[], p=[];
@@ -252,9 +252,9 @@ app.get("/api/expenses/summary", (req,res)=>{
   const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
   const sql = `
     SELECT
-      COALESCE(SUM(CASE WHEN taxable=1 THEN amount ELSE 0 END),0) AS taxable_total,
-      COALESCE(SUM(CASE WHEN taxable=0 THEN amount ELSE 0 END),0) AS nontax_total,
-      COALESCE(SUM(amount),0) AS grand_total
+      COALESCE(SUM(CASE WHEN taxable=1 THEN CAST(amount AS REAL) ELSE 0 END),0) AS taxable_total,
+      COALESCE(SUM(CASE WHEN taxable=0 THEN CAST(amount AS REAL) ELSE 0 END),0) AS nontax_total,
+      COALESCE(SUM(CAST(amount AS REAL)),0) AS grand_total
     FROM expenses ${where}`;
   db.get(sql, p, (err,row)=> err ? res.status(500).json({error:err.message}) : res.json(row));
 });
@@ -266,7 +266,7 @@ app.post("/api/expenses", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ id:this.lastID });});
 });
 
-// FIX: Edit (save) expenses
+// Edit expenses
 app.put("/api/expenses/:id", (req,res)=>{
   const { vendor, date, amount, taxable, category, note } = req.body;
   db.run("UPDATE expenses SET vendor=?, date=?, amount=?, taxable=?, category=?, note=? WHERE id=?",
@@ -274,7 +274,7 @@ app.put("/api/expenses/:id", (req,res)=>{
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ updated:this.changes });});
 });
 
-// FIX: Delete expenses
+// Delete expenses
 app.delete("/api/expenses/:id", (req,res)=>{
   db.run("DELETE FROM expenses WHERE id=?", [req.params.id],
     function(err){ if (err) return res.status(500).json({ error: err.message }); res.json({ deleted:this.changes });});
@@ -354,6 +354,45 @@ app.delete("/api/attendance/:id", (req,res)=>{
     if (err) return res.status(500).json({ error: err.message });
     res.json({ deleted:this.changes });
   });
+});
+
+// ==================== ACCOUNTING COMBINED + DIAGNOSTICS ====================
+app.get("/api/accounting/summary", (req,res)=>{
+  const { from, to } = req.query;
+  const run = (sql, params)=> new Promise((resolve,reject)=>{
+    db.get(sql, params, (e,row)=> e?reject(e):resolve(row||{}));
+  });
+  const cond=[], p=[];
+  if (from){ cond.push("date >= ?"); p.push(from); }
+  if (to){ cond.push("date <= ?"); p.push(to); }
+  const where = cond.length ? ("WHERE "+cond.join(" AND ")) : "";
+  const paySQL = `SELECT
+    COALESCE(SUM(CASE WHEN taxable=1 THEN CAST(amount AS REAL) ELSE 0 END),0) AS income_taxable,
+    COALESCE(SUM(CASE WHEN taxable=0 THEN CAST(amount AS REAL) ELSE 0 END),0) AS income_nontax,
+    COALESCE(SUM(CAST(amount AS REAL)),0) AS income_total
+    FROM payments ${where}`;
+  const expSQL = `SELECT
+    COALESCE(SUM(CASE WHEN taxable=1 THEN CAST(amount AS REAL) ELSE 0 END),0) AS expense_taxable,
+    COALESCE(SUM(CASE WHEN taxable=0 THEN CAST(amount AS REAL) ELSE 0 END),0) AS expense_nontax,
+    COALESCE(SUM(CAST(amount AS REAL)),0) AS expense_total
+    FROM expenses ${where}`;
+  Promise.all([run(paySQL,p), run(expSQL,p)]).then(([i,e])=>{
+    res.json({
+      ...i, ...e,
+      net_total: (i.income_total||0) - (e.expense_total||0)
+    });
+  }).catch(err=> res.status(500).json({ error: err.message }));
+});
+
+// Quick diagnostics for Accounting page
+app.get("/api/accounting/stats", (req,res)=>{
+  const q = (sql)=> new Promise((resolve,reject)=> db.get(sql, [], (e,row)=> e?reject(e):resolve(row)));
+  Promise.all([
+    q("SELECT COUNT(*) AS payments_count, MIN(date) AS min_date, MAX(date) AS max_date FROM payments"),
+    q("SELECT COUNT(*) AS expenses_count, MIN(date) AS min_date, MAX(date) AS max_date FROM expenses")
+  ]).then(([p,e])=>{
+    res.json({ payments:p, expenses:e });
+  }).catch(err=> res.status(500).json({ error: err.message }));
 });
 
 // --- start ---
