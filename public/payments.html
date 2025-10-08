@@ -1,178 +1,124 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <title>Payments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    label { display:block; margin-top:8px; font-size:14px; }
-    input, select { width:100%; padding:8px; box-sizing:border-box; }
-    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
-    .actions { margin-top:10px; display:flex; gap:8px; }
-    table { width:100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
-    th { background:#f9f9f9; }
-    .msg { margin:8px 0; }
-    .ok{color:#137333} .err{color:#b00020}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:20px;}
+    h1{margin:0 0 12px}
+    form,table{max-width:1000px}
+    label{display:block;margin:8px 0 4px}
+    input,select,textarea{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
+    button{padding:8px 12px;border:1px solid #333;background:#111;color:#fff;border-radius:8px;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left}
+    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .two{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
   </style>
 </head>
 <body>
-  <div style="display:flex; justify-content:space-between; align-items:center;">
-    <h1>Payments</h1>
-    <a href="index.html">← Back to Main Page</a>
-  </div>
+  <h1>Payments</h1>
 
-  <div id="msg" class="msg"></div>
-
-  <form id="paymentForm">
-    <div class="row">
+  <form id="payForm">
+    <div class="two">
       <div>
-        <label for="student_id">Student</label>
-        <select id="student_id" required></select>
+        <label>Student</label>
+        <select name="student_id" id="studentSelect" required></select>
       </div>
       <div>
-        <label for="date">Date</label>
-        <input type="date" id="date" required />
+        <label>Amount (USD)</label>
+        <input name="amount" type="number" step="0.01" min="0" required>
       </div>
       <div>
-        <label for="amount">Amount</label>
-        <input type="number" id="amount" step="0.01" required />
+        <label>Method</label>
+        <input name="method" placeholder="cash / card / e-transfer">
       </div>
       <div>
-        <label for="method">Method</label>
-        <select id="method">
-          <option>Cash</option>
-          <option>Credit</option>
-          <option>Debit</option>
-          <option>Transfer</option>
+        <label>Taxable?</label>
+        <select name="taxable">
+          <option value="1" selected>Yes (Taxable)</option>
+          <option value="0">No (Non-Taxable)</option>
         </select>
       </div>
-      <div>
-        <label for="taxable">Taxable?</label>
-        <select id="taxable">
-          <option value="1">Yes</option>
-          <option value="0" selected>No</option>
-        </select>
-      </div>
-      <div>
-        <label for="note">Note</label>
-        <input id="note" />
+      <div style="grid-column:1/-1">
+        <label>Note</label>
+        <input name="note" placeholder="membership / gear / etc.">
       </div>
     </div>
-    <div class="actions">
-      <button type="submit">Add Payment</button>
-      <button type="reset">Reset</button>
-    </div>
+    <div style="margin-top:10px"><button type="submit">Record Payment</button></div>
   </form>
 
-  <table id="paymentsTable">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Student</th>
-        <th>Date</th>
-        <th>Amount</th>
-        <th>Method</th>
-        <th>Taxable</th>
-        <th>Note</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="paymentsBody">
-      <tr><td colspan="8">Loading…</td></tr>
-    </tbody>
+  <table id="payTable">
+    <thead><tr>
+      <th>ID</th><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th>Taxable</th><th>Note</th><th>Actions</th>
+    </tr></thead>
+    <tbody></tbody>
   </table>
 
 <script>
-const $ = (id)=>document.getElementById(id);
-const msg=(t,ok=false)=>{const m=$('msg');m.className='msg '+(ok?'ok':'err');m.textContent=t;if(ok)setTimeout(()=>{m.textContent='';m.className='msg';},1800);};
+const $ = sel => document.querySelector(sel);
 
-// Load students into dropdown
 async function loadStudents(){
-  const sel=$('student_id');
-  sel.innerHTML='<option>Loading…</option>';
-  try{
-    const res=await fetch('/api/students');
-    const data=await res.json();
-    sel.innerHTML='<option value="">Select student…</option>';
-    for(const s of data){
-      const opt=document.createElement('option');
-      opt.value=s.id;
-      opt.textContent=s.name || `Student ${s.id}`;
-      sel.appendChild(opt);
-    }
-  }catch(e){sel.innerHTML='<option>(error)</option>';}
-}
-
-// Load payments
-async function loadPayments(){
-  const tbody=$('paymentsBody');
-  tbody.innerHTML='<tr><td colspan="8">Loading…</td></tr>';
-  try{
-    const res=await fetch('/api/payments');
-    const data=await res.json();
-    if(!Array.isArray(data)||data.length===0){
-      tbody.innerHTML='<tr><td colspan="8">No payments yet.</td></tr>';return;
-    }
-    tbody.innerHTML='';
-    for(const p of data){
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${p.id}</td>
-        <td>${p.student_name||'?'}</td>
-        <td>${p.date||''}</td>
-        <td>$${Number(p.amount).toFixed(2)}</td>
-        <td>${p.method||''}</td>
-        <td>${p.taxable? 'Yes':'No'}</td>
-        <td>${p.note||''}</td>
-        <td><button class="del" data-id="${p.id}">Delete</button></td>
-      `;
-      tbody.appendChild(tr);
-    }
-  }catch(e){tbody.innerHTML=`<tr><td colspan="8" class="err">${e.message}</td></tr>`;}
-}
-
-// Submit payment
-async function submitPayment(e){
-  e.preventDefault();
-  try{
-    const body={
-      student_id:$('student_id').value,
-      date:$('date').value,
-      amount:$('amount').value,
-      method:$('method').value,
-      taxable:$('taxable').value,
-      note:$('note').value
-    };
-    const res=await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const out=await res.json();
-    if(!res.ok) throw new Error(out.error||'Save failed');
-    msg('Payment added.',true);
-    $('paymentForm').reset();
-    await loadPayments();
-  }catch(err){msg(err.message);}
-}
-
-// Delete payment
-async function handleDelete(e){
-  if(e.target.classList.contains('del')){
-    const id=e.target.dataset.id;
-    if(!confirm(`Delete payment ${id}?`)) return;
-    try{
-      const res=await fetch(`/api/payments/${id}`,{method:'DELETE'});
-      const out=await res.json();
-      if(!res.ok) throw new Error(out.error||'Delete failed');
-      msg(`Deleted payment ${id}.`,true);
-      await loadPayments();
-    }catch(err){msg(err.message);}
+  const res = await fetch('/api/students'); const rows = await res.json();
+  const sel = $('#studentSelect'); sel.innerHTML = '';
+  for(const r of rows){
+    const o = document.createElement('option');
+    o.value = r.id; o.textContent = `${r.name} (#${r.id})`;
+    sel.appendChild(o);
   }
 }
 
-$('paymentForm').addEventListener('submit', submitPayment);
-$('paymentsTable').addEventListener('click', handleDelete);
+async function loadPayments(){
+  const res = await fetch('/api/payments'); const rows = await res.json();
+  const tb = $('#payTable tbody'); tb.innerHTML = '';
+  for(const r of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.created_at||''}</td>
+      <td>${r.student_name || '—'}</td>
+      <td>$${Number(r.amount).toFixed(2)}</td>
+      <td>${r.method||''}</td>
+      <td>${r.taxable ? 'Taxable' : 'Non-Taxable'}</td>
+      <td>${r.note||''}</td>
+      <td class="row-actions">
+        <button data-act="receipt" data-id="${r.id}">Receipt</button>
+        <button data-act="delete" data-id="${r.id}" class="secondary">Delete</button>
+      </td>
+    `;
+    tb.appendChild(tr);
+  }
+}
+
+$('#payForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  body.amount = parseFloat(body.amount || "0");
+  body.taxable = body.taxable === "1" ? 1 : 0;
+  const res = await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok){ alert('Save failed'); return; }
+  e.target.reset();
+  await loadPayments();
+});
+
+$('#payTable').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const id = btn.dataset.id; const act = btn.dataset.act;
+
+  if(act==='delete'){
+    if(!confirm(`Delete payment #${id}?`)) return;
+    const res = await fetch(`/api/payments/${id}`,{method:'DELETE'});
+    if(!res.ok) return alert('Delete failed');
+    return loadPayments();
+  }
+
+  if(act==='receipt'){
+    window.open(`/receipt/${id}`, '_blank');
+  }
+});
 
 loadStudents();
 loadPayments();

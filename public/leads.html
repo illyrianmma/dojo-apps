@@ -1,134 +1,112 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Leads</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body{font-family:system-ui,Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px}
-    table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{border:1px solid #ddd;padding:8px;text-align:left}
-    th{background:#f5f5f5}
-    .row{display:flex;gap:16px;flex-wrap:wrap}
-    .card{flex:1 1 420px;border:1px solid #ddd;border-radius:10px;padding:12px}
-    input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
-    tr.lead-warn{background:#fff9db}   /* >=4 days and not contacted/enrolled */
-    tr.lead-danger{background:#ffe5e5} /* >=14 days and not contacted/enrolled */
-    .actions button{width:auto;margin-right:6px}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:20px;}
+    h1{margin:0 0 12px}
+    form,table{max-width:900px}
+    label{display:block;margin:8px 0 4px}
+    input,textarea,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
+    button{padding:8px 12px;border:1px solid #333;background:#111;color:#fff;border-radius:8px;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left}
+    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .muted{color:#777;font-size:12px}
   </style>
 </head>
 <body>
   <h1>Leads</h1>
-  <p><a href="/index.html">Back to Main</a></p>
 
-  <div class="row">
-    <div class="card">
-      <h2>Add / Edit Lead</h2>
-      <input type="hidden" id="lead_id" />
-      <label>Name</label><input id="name" />
-      <label>Phone</label><input id="phone" />
-      <label>Email</label><input id="email" />
-      <label>Interested Program</label><input id="interested_program" />
-      <label>Follow Up Date</label><input type="date" id="follow_up_date" />
-      <label>Status</label>
-      <select id="status">
-        <option value="">New</option>
-        <option>Contacted</option>
-        <option>Enrolled</option>
-        <option>Not Interested</option>
-      </select>
-      <label>Notes</label><textarea id="notes" rows="3"></textarea>
-      <button id="saveBtn">Save Lead</button>
-      <button id="resetBtn" type="button">Reset</button>
+  <form id="leadForm">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:900px">
+      <div><label>Name</label><input name="name" required></div>
+      <div><label>Phone</label><input name="phone"></div>
+      <div><label>Email</label><input name="email" type="email"></div>
+      <div><label>Note</label><input name="note"></div>
     </div>
+    <div style="margin-top:10px"><button type="submit">Add Lead</button></div>
+  </form>
 
-    <div class="card">
-      <h2>Lead List</h2>
-      <table id="tbl">
-        <thead>
-          <tr>
-            <th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Age (days)</th><th>Status</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody><tr><td colspan="7">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+  <table id="leadTable">
+    <thead><tr>
+      <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Created</th><th>Actions</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
 
 <script>
-const $=sel=>document.querySelector(sel);
-function esc(s){return String(s??"")}
-function clearForm(){ ['lead_id','name','phone','email','interested_program','follow_up_date','status','notes']
-  .forEach(id=>$('#'+id).value=""); }
+const $ = sel => document.querySelector(sel);
+const T = (strings, ...vals) => strings.map((s,i)=>s+(vals[i]??"")).join("");
 
-async function load(){
-  const tb=$('#tbl tbody'); tb.innerHTML='<tr><td colspan="7">Loading…</td></tr>';
-  const res=await fetch('/api/leads'); const rows=await res.json();
-  if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="7">No leads</td></tr>';return;}
-  tb.innerHTML='';
-  rows.forEach(l=>{
-    const tr=document.createElement('tr');
-    const st=(l.status||'').toLowerCase();
-    const contacted = (st==='contacted' || st==='enrolled');
-    if(!contacted){
-      if((l.age_days||0) >= 14) tr.classList.add('lead-danger');
-      else if((l.age_days||0) >= 4) tr.classList.add('lead-warn');
-    }
-    tr.innerHTML = `
-      <td>${esc(l.name)}</td>
-      <td>${esc(l.phone||'')}</td>
-      <td>${esc(l.email||'')}</td>
-      <td>${esc(l.interested_program||'')}</td>
-      <td>${esc(l.age_days||0)}</td>
-      <td>${esc(l.status||'')}</td>
-      <td class="actions">
-        <button data-id="${l.id}" class="edit">Edit</button>
-        <button data-id="${l.id}" class="del">Delete</button>
+async function loadLeads(){
+  const res = await fetch('/api/leads'); const rows = await res.json();
+  const tb = $('#leadTable tbody'); tb.innerHTML = '';
+  for(const r of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = T`
+      <td>${r.id}</td>
+      <td>${r.name||''}<div class="muted">${r.note||''}</div></td>
+      <td>${r.phone||''}</td>
+      <td>${r.email||''}</td>
+      <td>${r.created_at||''}</td>
+      <td class="row-actions">
+        <button data-act="edit" data-id="${r.id}" class="secondary">Edit</button>
+        <button data-act="delete" data-id="${r.id}" class="secondary">Delete</button>
+        <button data-act="convert" data-id="${r.id}">Convert → Student</button>
       </td>`;
     tb.appendChild(tr);
-  });
+  }
 }
 
-document.getElementById('saveBtn').onclick = async ()=>{
-  const id = $('#lead_id').value.trim();
-  const body = {
-    name:$('#name').value.trim(),
-    phone:$('#phone').value.trim(),
-    email:$('#email').value.trim(),
-    interested_program:$('#interested_program').value.trim(),
-    follow_up_date:$('#follow_up_date').value,
-    status:$('#status').value,
-    notes:$('#notes').value.trim()
-  };
-  const opts = { method: id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) };
-  const url = id ? `/api/leads/${id}` : '/api/leads';
-  const r=await fetch(url, opts); const out=await r.json();
-  if(!r.ok){ alert(out.error || 'Save failed'); return; }
-  clearForm(); load();
-};
-document.getElementById('resetBtn').onclick = clearForm;
+$('#leadForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  const res = await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok){ alert('Save failed'); return;}
+  e.target.reset(); await loadLeads();
+});
 
-document.getElementById('tbl').addEventListener('click', async (e)=>{
-  const btn=e.target.closest('button'); if(!btn) return;
-  const id=btn.dataset.id;
-  if(btn.classList.contains('edit')){
-    const tr=btn.closest('tr'); const t=[...tr.children];
-    $('#lead_id').value = id;
-    $('#name').value = t[0].textContent;
-    $('#phone').value = t[1].textContent;
-    $('#email').value = t[2].textContent;
-    $('#interested_program').value = t[3].textContent;
-    $('#status').value = t[5].textContent || '';
-    window.scrollTo({top:0,behavior:'smooth'});
-  } else if(btn.classList.contains('del')){
-    if(!confirm('Delete this lead?')) return;
-    const r=await fetch(`/api/leads/${id}`, {method:'DELETE'}); const out=await r.json();
-    if(!r.ok){ alert(out.error||'Delete failed'); return; }
-    load();
+$('#leadTable').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const id = btn.dataset.id; const act = btn.dataset.act;
+
+  if(act==='delete'){
+    if(!confirm(`Delete lead #${id}?`)) return;
+    const res = await fetch(`/api/leads/${id}`,{method:'DELETE'});
+    if(!res.ok) return alert('Delete failed'); return loadLeads();
+  }
+
+  if(act==='edit'){
+    // simple prompt edit
+    const row = [...$('#leadTable tbody').children].find(tr=>tr.firstChild.textContent==id);
+    const name = prompt('Name:', row.children[1].firstChild.textContent) || '';
+    const phone = prompt('Phone:', row.children[2].textContent) || '';
+    const email = prompt('Email:', row.children[3].textContent) || '';
+    const note = prompt('Note:', row.children[1].querySelector('.muted')?.textContent || '') || '';
+    const res = await fetch(`/api/leads/${id}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,phone,email,note})
+    });
+    if(!res.ok) return alert('Update failed'); return loadLeads();
+  }
+
+  if(act==='convert'){
+    if(!confirm(`Convert lead #${id} to Student?`)) return;
+    const res = await fetch(`/api/leads/${id}/convert`,{method:'POST'});
+    const out = await res.json();
+    if(!res.ok) return alert(out.error || 'Convert failed');
+    alert(`Lead converted. New student id: ${out.studentId}`);
+    await loadLeads();
   }
 });
 
-load();
+loadLeads();
 </script>
 </body>
 </html>

@@ -1,186 +1,141 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Students</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body{font-family:system-ui,Arial,sans-serif;max-width:1150px;margin:24px auto;padding:0 16px}
-    table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{border:1px solid #ddd;padding:8px;text-align:left}
-    th{background:#f5f5f5}
-    .row{display:flex;gap:16px;flex-wrap:wrap}
-    .card{flex:1 1 520px;border:1px solid #ddd;border-radius:10px;padding:12px}
-    input,select,textarea,button{padding:8px;margin:6px 0;width:100%}
-    .actions button{width:auto;margin-right:6px}
-    /* overdue colors */
-    tr.overdue{background:#ffe5e5}
-    tr.due_soon{background:#fff0e0}
-    .preview{max-width:140px;max-height:140px;display:block;border:1px solid #ccc;border-radius:6px}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:20px;}
+    h1{margin:0 0 12px}
+    form,table{max-width:1000px}
+    label{display:block;margin:8px 0 4px}
+    input,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
+    button{padding:8px 12px;border:1px solid #333;background:#111;color:#fff;border-radius:8px;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}
+    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .dueSoon{background:#fff6e6}
+    .late{background:#ffeaea}
+    .muted{color:#777;font-size:12px}
+    .two{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
   </style>
 </head>
 <body>
   <h1>Students</h1>
-  <p><a href="/index.html">Back to Main</a></p>
 
-  <div class="row">
-    <div class="card">
-      <h2>Add / Edit Student</h2>
-      <input type="hidden" id="sid" />
-      <label>Name</label><input id="name" placeholder="Full name">
-      <label>Phone</label><input id="phone" placeholder="Phone">
-      <label>Email</label><input id="email" placeholder="Email">
-
-      <label>Address</label><input id="address" placeholder="Address">
-      <label>Age</label><input id="age" type="number" min="0" step="1" placeholder="Age">
-      <label>Program</label><input id="program" placeholder="Program">
-
-      <div class="row" style="gap:12px">
-        <div style="flex:1">
-          <label>Start Date</label><input id="start_date" type="date">
-        </div>
-        <div style="flex:1">
-          <label>Renewal Date (+28 days)</label><input id="renewal_date" type="date">
-        </div>
-      </div>
-
-      <label>Parent Name</label><input id="parent_name" placeholder="Parent (if minor)">
-      <label>Parent Phone</label><input id="parent_phone" placeholder="Parent Phone">
-      <label>Notes</label><textarea id="notes" rows="3" placeholder="Notes"></textarea>
-
-      <label>Photo</label><input id="photo" type="file" accept="image/*">
-      <img id="preview" class="preview" alt="No photo" />
-
-      <button id="save">Save Student</button>
-      <button id="reset" type="button">Reset Form</button>
+  <form id="studentForm">
+    <div class="two">
+      <div><label>Name</label><input name="name" required></div>
+      <div><label>Phone</label><input name="phone"></div>
+      <div><label>Email</label><input name="email" type="email"></div>
+      <div><label>Join Date</label><input name="join_date" type="date"></div>
     </div>
+    <div style="margin-top:10px"><button type="submit">Add Student</button></div>
+  </form>
 
-    <div class="card">
-      <h2>Student List</h2>
-      <table id="tbl">
-        <thead>
-          <tr>
-            <th>Photo</th><th>Name</th><th>Contacts</th>
-            <th>Program</th><th>Start</th><th>Renewal</th><th>Status</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody><tr><td colspan="8">Loading…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+  <table id="studentTable">
+    <thead><tr>
+      <th>ID</th><th>Name</th><th>Contact</th><th>Join</th><th>Renewal</th><th>Actions</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
 
 <script>
-const $ = s => document.querySelector(s);
+const $ = sel => document.querySelector(sel);
 
-function today(){ return new Date().toISOString().slice(0,10); }
-function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); }
+function isoToday(){ return new Date().toISOString().slice(0,10); }
+function addDaysISO(iso,days){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
 
-function prefills(){
-  const s=$('#start_date'), r=$('#renewal_date');
-  if(s && !s.value) s.value = today();
-  if(r) r.value = addDays(s.value || today(), 28);
-  if(s && r){ s.addEventListener('change', ()=>{ r.value = addDays(s.value, 28); }); }
-}
-prefills();
+$('#studentForm [name=join_date]').value = isoToday();
 
-$('#photo').addEventListener('change', ()=>{
-  const f = $('#photo').files[0];
-  const pv = $('#preview');
-  if(!f){ pv.src=''; pv.alt='No photo'; return; }
-  const url = URL.createObjectURL(f);
-  pv.src = url; pv.alt = 'preview';
-});
+async function loadStudents(){
+  const res = await fetch('/api/students'); const rows = await res.json();
+  const tb = $('#studentTable tbody'); tb.innerHTML='';
+  const today = isoToday();
 
-function rowHTML(s){
-  const img = s.photo ? `<img src="${s.photo}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #ccc">` : '';
-  const contacts = [s.phone||'', s.email||''].filter(Boolean).join('<br>');
-  return `
-    <td>${img}</td>
-    <td>${s.name||''}</td>
-    <td>${contacts}</td>
-    <td>${s.program||''}</td>
-    <td>${s.start_date||''}</td>
-    <td>${s.renewal_date||''}</td>
-    <td>${s.due_status||'ok'}</td>
-    <td class="actions">
-      <button class="edit" data-id="${s.id}">Edit</button>
-      <button class="del" data-id="${s.id}">Delete</button>
-    </td>`;
-}
+  for(const r of rows){
+    const tr = document.createElement('tr');
+    let cls = '';
+    if(r.renewal_date){
+      if(r.renewal_date < today) cls = 'late';
+      else {
+        const soon = addDaysISO(today,7);
+        if(r.renewal_date <= soon) cls = 'dueSoon';
+      }
+    }
+    tr.className = cls;
 
-async function load(){
-  const tb = $('#tbl tbody'); tb.innerHTML = '<tr><td colspan="8">Loading…</td></tr>';
-  const r = await fetch('/api/students'); const rows = await r.json();
-  if(!Array.isArray(rows) || rows.length===0){ tb.innerHTML='<tr><td colspan="8">No students</td></tr>'; return; }
-  tb.innerHTML='';
-  rows.forEach(s=>{
-    const tr=document.createElement('tr');
-    if(s.due_status==='overdue') tr.classList.add('overdue');
-    else if(s.due_status==='due_soon') tr.classList.add('due_soon');
-    tr.innerHTML = rowHTML(s);
+    const contact = [r.phone||'', r.email||''].filter(Boolean).join(' · ');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.name||''}</td>
+      <td><div>${contact||'<span class="muted">—</span>'}</div></td>
+      <td>${r.join_date||''}</td>
+      <td>${r.renewal_date||''}</td>
+      <td class="row-actions">
+        <button data-act="edit" data-id="${r.id}" class="secondary">Edit</button>
+        <button data-act="delete" data-id="${r.id}" class="secondary">Delete</button>
+        <button data-act="archive" data-id="${r.id}">Archive → Old</button>
+      </td>
+    `;
     tb.appendChild(tr);
-  });
-}
-load();
-
-function formToFD(id){
-  const fd = new FormData();
-  fd.append('name',$('#name').value.trim());
-  fd.append('phone',$('#phone').value.trim());
-  fd.append('email',$('#email').value.trim());
-  fd.append('address',$('#address').value.trim());
-  fd.append('age',$('#age').value.trim());
-  fd.append('program',$('#program').value.trim());
-  fd.append('start_date',$('#start_date').value);
-  fd.append('renewal_date',$('#renewal_date').value);
-  fd.append('parent_name',$('#parent_name').value.trim());
-  fd.append('parent_phone',$('#parent_phone').value.trim());
-  fd.append('notes',$('#notes').value.trim());
-  const f=$('#photo').files[0]; if(f) fd.append('photo', f);
-  return fd;
+  }
 }
 
-$('#save').addEventListener('click', async ()=>{
-  const id = $('#sid').value.trim();
-  const opts = { method: id? 'PUT':'POST', body: formToFD(id) };
-  const url = id ? `/api/students/${id}` : '/api/students';
-  const r = await fetch(url, opts);
-  const out = await r.json();
-  if(!r.ok){ alert(out.error||'Save failed'); return; }
-  resetForm(); load();
+$('#studentForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  if(!body.join_date) body.join_date = isoToday();
+  // server will auto-calc renewal if omitted
+  const res = await fetch('/api/students',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok) return alert('Save failed');
+  e.target.reset(); $('#studentForm [name=join_date]').value = isoToday();
+  await loadStudents();
 });
 
-function resetForm(){
-  ['sid','name','phone','email','address','age','program','parent_name','parent_phone','notes'].forEach(id=>$('#'+id).value='');
-  $('#photo').value=''; $('#preview').src=''; $('#preview').alt='No photo';
-  $('#start_date').value=''; $('#renewal_date').value='';
-  prefills();
-}
-$('#reset').addEventListener('click', resetForm);
-
-document.getElementById('tbl').addEventListener('click', async (e)=>{
+$('#studentTable').addEventListener('click', async (e)=>{
   const btn = e.target.closest('button'); if(!btn) return;
-  const id = btn.dataset.id;
-  const tr = btn.closest('tr'); const t=[...tr.children];
-  if(btn.classList.contains('edit')){
-    $('#sid').value = id;
-    $('#name').value = t[1].textContent.trim();
-    const parts = t[2].innerHTML.split('<br>');
-    $('#phone').value = (parts[0]||'').replace(/<[^>]*>/g,'');
-    $('#email').value = (parts[1]||'').replace(/<[^>]*>/g,'');
-    $('#program').value = t[3].textContent.trim();
-    $('#start_date').value = t[4].textContent.trim();
-    $('#renewal_date').value = t[5].textContent.trim();
-    // other fields (address, parents, notes) not shown in table—leave as-is
-    window.scrollTo({top:0, behavior:'smooth'});
-  } else if(btn.classList.contains('del')){
-    if(!confirm('Delete this student and related records?')) return;
-    const r = await fetch(`/api/students/${id}`, {method:'DELETE'});
-    const out = await r.json();
-    if(!r.ok){ alert(out.error||'Delete failed'); return; }
-    load();
+  const id = btn.dataset.id; const act = btn.dataset.act;
+
+  if(act==='delete'){
+    if(!confirm(`Delete student #${id}?`)) return;
+    const res = await fetch(`/api/students/${id}`,{method:'DELETE'});
+    if(!res.ok) return alert('Delete failed'); return loadStudents();
+  }
+
+  if(act==='edit'){
+    const row = btn.closest('tr').children;
+    const current = {
+      name: row[1].textContent.trim(),
+      contact: row[2].textContent.trim(),
+      join_date: row[3].textContent.trim(),
+      renewal_date: row[4].textContent.trim(),
+    };
+    const name = prompt('Name:', current.name) || current.name;
+    const phone = prompt('Phone:', current.contact.split('·')[0]?.trim() || '') || '';
+    const email = prompt('Email:', current.contact.split('·')[1]?.trim() || '') || '';
+    const join_date = prompt('Join date (YYYY-MM-DD):', current.join_date || '') || current.join_date || '';
+    const renewal_date = prompt('Renewal date (YYYY-MM-DD):', current.renewal_date || '') || current.renewal_date || '';
+    const res = await fetch(`/api/students/${id}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,phone,email,join_date,renewal_date,status:'active'})
+    });
+    if(!res.ok) return alert('Update failed'); return loadStudents();
+  }
+
+  if(act==='archive'){
+    if(!confirm(`Move student #${id} to Old Students?`)) return;
+    const res = await fetch(`/api/students/${id}/archive`,{method:'POST'});
+    const out = await res.json();
+    if(!res.ok) return alert(out.error||'Archive failed');
+    await loadStudents();
   }
 });
+
+loadStudents();
 </script>
 </body>
 </html>
