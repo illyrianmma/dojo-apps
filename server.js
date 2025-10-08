@@ -1,460 +1,306 @@
-/** server.js — dojo apps (leads→students, archive students, printable receipts) */
-console.log(">>> server.js started <<<");
+// server.js — Dojo Apps API + static
+// Safe, idempotent migrations + backfill for join/renewal/status
 
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
-const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const multer = require("multer");
-const AdmZip = require("adm-zip");
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Pick an existing DB if present; otherwise use ./dojo.db
+const DB_CANDIDATES = [
+  path.join(__dirname, 'dojo.db'),
+  path.join(__dirname, 'data', 'dojo.db'),
+  '/data/dojo.db', // Render's persistent disk
+];
+let DB_PATH = DB_CANDIDATES.find(p => fs.existsSync(p)) || DB_CANDIDATES[0];
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+console.log('[dojo] DB =', DB_PATH);
+const db = new sqlite3.Database(DB_PATH);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ----- config / data dir ------------------------------------------------------
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// --- tiny promisified helpers ---
+const all = (sql, args=[]) => new Promise((res, rej)=>db.all(sql, args, (e,r)=>e?rej(e):res(r)));
+const get = (sql, args=[]) => new Promise((res, rej)=>db.get(sql, args, (e,r)=>e?rej(e):res(r)));
+const run = (sql, args=[]) => new Promise((res, rej)=>db.run(sql, args, function(e){e?rej(e):res({changes:this.changes,lastID:this.lastID})}));
 
-const DB_FILE = path.join(DATA_DIR, "dojo.db");
-const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// --- date helpers (ISO yyyy-mm-dd) ---
+const todayISO = () => new Date().toISOString().slice(0,10);
 
-app.use(express.static(path.join(__dirname, "public")));
+// --- schema + migrations + backfill ---
+async function ensureSchema() {
+  await run('PRAGMA foreign_keys=ON');
 
-// ----- db helpers --------------------------------------------------------------
-const db = new sqlite3.Database(DB_FILE);
-function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
-}
-function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
-  });
-}
-function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
-  });
-}
-
-// ----- bootstrap schema --------------------------------------------------------
-db.serialize(() => {
-  // leads
-  run(`
+  // Leads
+  await run(`
     CREATE TABLE IF NOT EXISTS leads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
+      name TEXT,
       phone TEXT,
       email TEXT,
-      note TEXT,
-      created_at TEXT DEFAULT (date('now')),
-      last_contacted TEXT
+      notes TEXT,
+      created_at TEXT,
+      status TEXT DEFAULT 'open'
     )
-  `).catch(()=>{});
+  `);
+  await maybeAddColumn('leads', 'status',       "status TEXT DEFAULT 'open'");
+  await maybeAddColumn('leads', 'created_at',   "created_at TEXT");
+  await run(`UPDATE leads SET status='open' WHERE status IS NULL OR status=''`);
+  await run(`UPDATE leads SET created_at = DATE('now') WHERE created_at IS NULL OR created_at=''`);
 
-  // students (active)
-  run(`
+  // Students
+  await run(`
     CREATE TABLE IF NOT EXISTS students (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
+      name TEXT,
       phone TEXT,
       email TEXT,
-      picture TEXT,
-      join_date TEXT DEFAULT (date('now')),
+      join_date TEXT,
       renewal_date TEXT,
       status TEXT DEFAULT 'active'
     )
-  `).catch(()=>{});
+  `);
+  await maybeAddColumn('students', 'status',       "status TEXT DEFAULT 'active'");
+  await maybeAddColumn('students', 'join_date',    "join_date TEXT");
+  await maybeAddColumn('students', 'renewal_date', "renewal_date TEXT");
+  await run(`UPDATE students SET status='active' WHERE status IS NULL OR status=''`);
 
-  // old_students (archived copy)
-  run(`
-    CREATE TABLE IF NOT EXISTS old_students (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      phone TEXT,
-      email TEXT,
-      picture TEXT,
-      join_date TEXT,
-      renewal_date TEXT,
-      archived_at TEXT DEFAULT (datetime('now'))
-    )
-  `).catch(()=>{});
+  // Backfill dates
+  // 1) If renewal exists but join is missing -> join = renewal - 28 days
+  await run(`
+    UPDATE students
+    SET join_date = DATE(renewal_date, '-28 days')
+    WHERE (join_date IS NULL OR join_date='')
+      AND (renewal_date IS NOT NULL AND renewal_date!='')
+  `);
+  // 2) If both join and renewal missing -> set both (today & +28)
+  await run(`
+    UPDATE students
+    SET join_date = DATE('now'),
+        renewal_date = DATE('now','+28 days')
+    WHERE (join_date IS NULL OR join_date='')
+      AND (renewal_date IS NULL OR renewal_date='')
+  `);
 
-  // payments
-  run(`
+  // Payments
+  await run(`
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      amount REAL NOT NULL,
+      date TEXT,
+      student_id INTEGER,
+      amount REAL,
       method TEXT,
       taxable INTEGER DEFAULT 1,
-      note TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY(student_id) REFERENCES students(id)
+      note TEXT
     )
-  `).catch(()=>{});
+  `);
+  await maybeAddColumn('payments', 'taxable', "taxable INTEGER DEFAULT 1");
 
-  // expenses
-  run(`
+  // Expenses (optional; used by accounting)
+  await run(`
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      vendor TEXT,
-      amount REAL NOT NULL,
-      category TEXT,
-      note TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      date TEXT,
+      amount REAL,
+      taxable INTEGER DEFAULT 1,
+      note TEXT
     )
-  `).catch(()=>{});
-
-  // attendance (if you use it later)
-  run(`
-    CREATE TABLE IF NOT EXISTS attendance (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      at_date TEXT NOT NULL,
-      note TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY(student_id) REFERENCES students(id)
-    )
-  `).catch(()=>{});
-});
-
-// ----- utilities ---------------------------------------------------------------
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-function addDaysISO(isoDate, days) {
-  const d = new Date(isoDate + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-// ----- health/admin ------------------------------------------------------------
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    data_dir: DATA_DIR,
-    port: process.env.PORT || 3000,
-    has_admin: !!ADMIN_TOKEN,
-  });
-});
-
-// backup (zip data dir + uploads) and restore
-app.get("/admin", async (req, res) => {
-  const token = req.query.token || "";
-  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) return res.status(401).send("Unauthorized");
-  // very plain admin UI
-  res.send(`
-    <!doctype html><meta charset="utf-8">
-    <h1>Admin Tools</h1>
-    <p>Data dir: ${DATA_DIR}</p>
-    <p><a href="/admin/export?token=${token}">Export Backup (zip)</a></p>
-    <form action="/admin/restore?token=${token}" method="post" enctype="multipart/form-data">
-      <input type="file" name="zip" accept=".zip" required>
-      <button type="submit">Restore From Zip</button>
-    </form>
-    <p><a href="/">Back to app</a></p>
   `);
+  await maybeAddColumn('expenses', 'taxable', "taxable INTEGER DEFAULT 1");
+}
+
+async function maybeAddColumn(table, col, ddl) {
+  const cols = await all(`PRAGMA table_info(${table})`);
+  const exists = cols.some(c => c.name.toLowerCase() === col.toLowerCase());
+  if (!exists) {
+    await run(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    console.log(`[migrate] ${table}.${col} added`);
+  }
+}
+
+// --- API: Leads ---
+app.get('/api/leads', async (req, res) => {
+  try {
+    const leads = await all(`SELECT id,name,phone,email,notes,created_at,status FROM leads ORDER BY id DESC`);
+    res.json({ ok: true, leads });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
 });
 
-app.get("/admin/export", async (req, res) => {
-  const token = req.query.token || "";
-  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) return res.status(401).send("Unauthorized");
-  const zip = new AdmZip();
-  if (fs.existsSync(DB_FILE)) zip.addLocalFile(DB_FILE, "data");
-  if (fs.existsSync(UPLOAD_DIR)) zip.addLocalFolder(UPLOAD_DIR, "uploads");
-  const tmp = path.join(os.tmpdir(), `dojo-backup-${Date.now()}.zip`);
-  zip.writeZip(tmp);
-  res.setHeader("Content-Disposition", "attachment; filename=dojo-backup.zip");
-  res.sendFile(tmp, err => { try { fs.unlinkSync(tmp); } catch(_){} });
+app.post('/api/leads', async (req, res) => {
+  try {
+    const { name='', phone='', email='', notes='' } = req.body || {};
+    await run(
+      `INSERT INTO leads (name,phone,email,notes,created_at,status) VALUES (?,?,?,?,DATE('now'),'open')`,
+      [name,phone,email,notes]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
 });
 
-const upload = multer({ dest: path.join(os.tmpdir(), "dojo-restore") });
-app.post("/admin/restore", upload.single("zip"), async (req, res) => {
-  const token = req.query.token || "";
-  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) return res.status(401).send("Unauthorized");
-  if (!req.file) return res.status(400).send("No file");
-  const zip = new AdmZip(req.file.path);
-  const entries = zip.getEntries();
-  entries.forEach(e => {
-    if (e.entryName.startsWith("data/") && e.name === "dojo.db") {
-      fs.writeFileSync(DB_FILE, e.getData());
+app.post('/api/leads/:id/convert', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const lead = await get(`SELECT * FROM leads WHERE id=?`, [id]);
+    if (!lead) return res.json({ ok:false, error:'Lead not found' });
+
+    const r = await run(
+      `INSERT INTO students (name,phone,email,join_date,renewal_date,status)
+       VALUES (?,?,?,DATE('now'),DATE('now','+28 days'),'active')`,
+      [lead.name||'', lead.phone||'', lead.email||'']
+    );
+    await run(`UPDATE leads SET status='converted' WHERE id=?`, [id]);
+    res.json({ ok:true, student_id: r.lastID });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+// --- API: Students ---
+app.get('/api/students', async (req, res) => {
+  try {
+    const students = await all(`
+      SELECT id,name,phone,email,join_date,renewal_date,status
+      FROM students
+      ORDER BY id DESC
+    `);
+    res.json({ ok:true, students });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+app.post('/api/students', async (req, res) => {
+  try {
+    const { name='', phone='', email='' } = req.body || {};
+    await run(
+      `INSERT INTO students (name,phone,email,join_date,renewal_date,status)
+       VALUES (?,?,?,DATE('now'),DATE('now','+28 days'),'active')`,
+      [name,phone,email]
+    );
+    res.json({ ok:true });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+app.post('/api/students/:id/archive', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const exists = await get(`SELECT id FROM students WHERE id=?`, [id]);
+    if (!exists) return res.json({ ok:false, error:'Student not found' });
+    await run(`UPDATE students SET status='archived' WHERE id=?`, [id]);
+    res.json({ ok:true });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+// --- API: Payments ---
+app.get('/api/payments', async (req, res) => {
+  try {
+    const payments = await all(`SELECT id,date,student_id,amount,method,taxable,note FROM payments ORDER BY id DESC`);
+    res.json({ ok:true, payments });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+app.post('/api/payments', async (req, res) => {
+  try {
+    const { date, student_id, amount, method='', taxable=1, note='' } = req.body || {};
+    await run(
+      `INSERT INTO payments (date,student_id,amount,method,taxable,note)
+       VALUES (COALESCE(?,DATE('now')) , ?, ?, ?, ?, ?)`,
+      [date||null, student_id||null, Number(amount||0), method, taxable?1:0, note]
+    );
+    res.json({ ok:true });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+// --- API: Accounting ---
+app.get('/api/accounting', async (req, res) => {
+  try {
+    const pTax  = await get(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE taxable=1`);
+    const pNon  = await get(`SELECT COALESCE(SUM(amount),0) v FROM payments WHERE taxable=0`);
+    const eTax  = await get(`SELECT COALESCE(SUM(amount),0) v FROM expenses WHERE taxable=1`);
+    const eNon  = await get(`SELECT COALESCE(SUM(amount),0) v FROM expenses WHERE taxable=0`);
+    const payments = { taxable:+pTax.v, nonTaxable:+pNon.v, total:+pTax.v + +pNon.v };
+    const expenses = { taxable:+eTax.v, nonTaxable:+eNon.v, total:+eTax.v + +eNon.v };
+    const net = {
+      taxable: payments.taxable - expenses.taxable,
+      nonTaxable: payments.nonTaxable - expenses.nonTaxable,
+      total: payments.total - expenses.total
+    };
+    res.json({ ok:true, payments, expenses, net });
+  } catch (e) { res.json({ ok:false, error:String(e.message||e) }); }
+});
+
+// --- static site ---
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- boot ---
+ensureSchema()
+  .then(() => app.listen(PORT, () => console.log(`[dojo] http://localhost:${PORT}`)))
+  .catch(err => { console.error('[migrate failed]', err); process.exit(1); });
+// ===== Admin backup/export (safe) =====
+const path = require('path');
+const fs = require('fs');
+
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || null;
+
+// Try to reuse your existing DATA_DIR if present; otherwise default.
+const __ADMIN_DATA_DIR =
+  (typeof DATA_DIR !== 'undefined' && DATA_DIR) ||
+  process.env.DATA_DIR ||
+  path.join(__dirname, 'data');
+
+const __ADMIN_DB_FILE =
+  (typeof DB_FILE !== 'undefined' && DB_FILE) ||
+  path.join(__ADMIN_DATA_DIR, 'dojo.db');
+
+function adminGuard(req, res) {
+  if (ADMIN_TOKEN) {
+    const tok = (req.query.token || req.headers['x-admin-token'] || '').toString();
+    if (tok !== ADMIN_TOKEN) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
     }
-    if (e.entryName.startsWith("uploads/")) {
-      const out = path.join(UPLOAD_DIR, e.entryName.replace(/^uploads\//, ""));
-      const dir = path.dirname(out);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(out, e.getData());
+    return true;
+  }
+  // No token set: only allow from localhost
+  const ip = (req.ip || '').toString();
+  const isLocal = ip === '::1' || ip.endsWith('127.0.0.1') || ip === '::ffff:127.0.0.1';
+  if (!isLocal) return res.status(403).json({ ok: false, error: 'forbidden' });
+  return true;
+}
+
+// Stream the raw SQLite file (download)
+app.get('/api/admin/backup-db', (req, res) => {
+  if (!adminGuard(req, res)) return;
+  if (!fs.existsSync(__ADMIN_DB_FILE)) {
+    return res.status(404).json({ ok: false, error: 'db_not_found', path: __ADMIN_DB_FILE });
+  }
+  const fname = `dojo-${new Date().toISOString().slice(0,10)}.db`;
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+  res.sendFile(__ADMIN_DB_FILE, (err) => {
+    if (err) {
+      console.error('backup-db sendFile error:', err);
+      if (!res.headersSent) res.status(500).json({ ok: false, error: 'send_error' });
     }
   });
-  res.send(`<p>Restored. <a href="/admin?token=${token}">Back</a></p>`);
 });
 
-// ----- LEADS -------------------------------------------------------------------
-app.get("/api/leads", async (req, res) => {
+// Export all tables as JSON (fallback if file download is blocked)
+function dbAll(sql) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, (err, rows) => (err ? reject(err) : resolve(rows || [])));
+  });
+}
+app.get('/api/admin/export-json', async (req, res) => {
+  if (!adminGuard(req, res)) return;
   try {
-    const rows = await all(`SELECT * FROM leads ORDER BY id DESC`);
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/leads", async (req, res) => {
-  const { name, phone, email, note } = req.body;
-  if (!name) return res.status(400).json({ error: "Name required" });
-  try {
-    const created_at = today();
-    const out = await run(
-      `INSERT INTO leads (name, phone, email, note, created_at) VALUES (?,?,?,?,?)`,
-      [name, phone || "", email || "", note || "", created_at]
-    );
-    res.json({ ok: true, id: out.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put("/api/leads/:id", async (req, res) => {
-  const { name, phone, email, note, last_contacted } = req.body;
-  try {
-    await run(
-      `UPDATE leads SET name=?, phone=?, email=?, note=?, last_contacted=? WHERE id=?`,
-      [name, phone, email, note, last_contacted || null, req.params.id]
-    );
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete("/api/leads/:id", async (req, res) => {
-  try { await run(`DELETE FROM leads WHERE id=?`, [req.params.id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// NEW: Convert lead → student
-app.post("/api/leads/:id/convert", async (req, res) => {
-  try {
-    const lead = await get(`SELECT * FROM leads WHERE id=?`, [req.params.id]);
-    if (!lead) return res.status(404).json({ error: "Lead not found" });
-
-    const join_date = today();
-    const renewal_date = addDaysISO(join_date, 28);
-
-    const ins = await run(
-      `INSERT INTO students (name, phone, email, join_date, renewal_date, status)
-       VALUES (?,?,?,?,?, 'active')`,
-      [lead.name, lead.phone || "", lead.email || "", join_date, renewal_date]
-    );
-
-    // Remove the lead after converting
-    await run(`DELETE FROM leads WHERE id=?`, [req.params.id]);
-
-    res.json({ ok: true, studentId: ins.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ----- STUDENTS ----------------------------------------------------------------
-app.get("/api/students", async (req, res) => {
-  try {
-    const rows = await all(`SELECT * FROM students WHERE status='active' ORDER BY id DESC`);
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/students", async (req, res) => {
-  const { name, phone, email, join_date, renewal_date } = req.body;
-  if (!name) return res.status(400).json({ error: "Name required" });
-  try {
-    const jd = join_date || today();
-    const rd = renewal_date || addDaysISO(jd, 28);
-    const out = await run(
-      `INSERT INTO students (name, phone, email, join_date, renewal_date, status)
-       VALUES (?,?,?,?,?, 'active')`,
-      [name, phone || "", email || "", jd, rd]
-    );
-    res.json({ ok: true, id: out.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.put("/api/students/:id", async (req, res) => {
-  const { name, phone, email, join_date, renewal_date, status } = req.body;
-  try {
-    await run(
-      `UPDATE students SET name=?, phone=?, email=?, join_date=?, renewal_date=?, status=? WHERE id=?`,
-      [name, phone, email, join_date, renewal_date, status || 'active', req.params.id]
-    );
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete("/api/students/:id", async (req, res) => {
-  try { await run(`DELETE FROM students WHERE id=?`, [req.params.id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// NEW: Archive student → old_students (and remove from active table)
-app.post("/api/students/:id/archive", async (req, res) => {
-  try {
-    const s = await get(`SELECT * FROM students WHERE id=?`, [req.params.id]);
-    if (!s) return res.status(404).json({ error: "Student not found" });
-
-    await run(
-      `INSERT INTO old_students (name, phone, email, picture, join_date, renewal_date)
-       VALUES (?,?,?,?,?,?)`,
-      [s.name, s.phone || "", s.email || "", s.picture || "", s.join_date || null, s.renewal_date || null]
-    );
-    await run(`DELETE FROM students WHERE id=?`, [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/old-students", async (req, res) => {
-  try {
-    const rows = await all(`SELECT * FROM old_students ORDER BY id DESC`);
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ----- PAYMENTS + RECEIPTS -----------------------------------------------------
-app.get("/api/payments", async (req, res) => {
-  try {
-    const rows = await all(`
-      SELECT p.*, s.name AS student_name
-      FROM payments p
-      LEFT JOIN students s ON s.id=p.student_id
-      ORDER BY p.id DESC
-    `);
-    res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/payments", async (req, res) => {
-  const { student_id, amount, method, taxable, note } = req.body;
-  if (!student_id || !amount) return res.status(400).json({ error: "student_id & amount required" });
-  try {
-    const out = await run(
-      `INSERT INTO payments (student_id, amount, method, taxable, note) VALUES (?,?,?,?,?)`,
-      [student_id, parseFloat(amount), method || "", taxable ? 1 : 0, note || ""]
-    );
-    res.json({ ok: true, id: out.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.delete("/api/payments/:id", async (req, res) => {
-  try { await run(`DELETE FROM payments WHERE id=?`, [req.params.id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// NEW: Printable receipt page
-app.get("/receipt/:id", async (req, res) => {
-  try {
-    const row = await get(`
-      SELECT p.*, s.name AS student_name, s.phone, s.email
-      FROM payments p
-      LEFT JOIN students s ON s.id=p.student_id
-      WHERE p.id=?
-    `, [req.params.id]);
-    if (!row) return res.status(404).send("Receipt not found");
-
-    const dojoName = process.env.DOJO_NAME || "Your Dojo";
-    const dojoAddr = process.env.DOJO_ADDR || "";
-    const dojoPhone = process.env.DOJO_PHONE || "";
-    const logoUrl = "/logo.png"; // put a logo in /public/logo.png if you want
-
-    const taxableText = row.taxable ? "Taxable" : "Non-Taxable";
-    const created = row.created_at || new Date().toISOString();
-
-    res.send(`<!doctype html>
-<html><head><meta charset="utf-8">
-<title>Receipt #${row.id}</title>
-<style>
-  :root { --ink:#111; --muted:#666; --line:#ddd; }
-  *{ box-sizing:border-box; }
-  body{ font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; color:var(--ink); margin:24px; }
-  .wrap{ max-width:720px; margin:0 auto; border:1px solid var(--line); padding:24px; border-radius:12px; }
-  header{ display:flex; gap:16px; align-items:center; border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:16px; }
-  header img{ width:64px; height:64px; object-fit:contain; }
-  h1{ font-size:20px; margin:0; }
-  .muted{ color:var(--muted); font-size:14px; }
-  table{ width:100%; border-collapse:collapse; margin-top:8px; }
-  th,td{ text-align:left; padding:8px 0; }
-  .line{ border-top:1px dashed var(--line); margin:12px 0; }
-  .right{ text-align:right; }
-  .btnbar{ margin-top:16px; display:flex; gap:8px; }
-  @media print{
-    .btnbar{ display:none; }
-    body{ margin:0; }
-    .wrap{ border:none; }
+    const students  = await dbAll('SELECT * FROM students');
+    const leads     = await dbAll('SELECT * FROM leads');
+    const payments  = await dbAll('SELECT * FROM payments');
+    const expenses  = await dbAll('SELECT * FROM expenses');
+    res.json({ ok: true, snapshotAt: new Date().toISOString(), students, leads, payments, expenses });
+  } catch (e) {
+    console.error('export-json error:', e);
+    res.status(500).json({ ok: false, error: 'query_failed' });
   }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <img src="${logoUrl}" onerror="this.style.display='none'">
-      <div>
-        <h1>${dojoName}</h1>
-        <div class="muted">${dojoAddr || ""}${dojoAddr && dojoPhone ? " · " : ""}${dojoPhone || ""}</div>
-      </div>
-      <div style="margin-left:auto;text-align:right">
-        <div class="muted">Receipt</div>
-        <div>#${row.id}</div>
-        <div class="muted">${created}</div>
-      </div>
-    </header>
-
-    <section>
-      <strong>Billed To:</strong><br>
-      ${row.student_name || "Student"}<br>
-      <span class="muted">${row.email || ""}${row.email && row.phone ? " · " : ""}${row.phone || ""}</span>
-    </section>
-
-    <div class="line"></div>
-
-    <table>
-      <tr><th>Description</th><th class="right">Amount (USD)</th></tr>
-      <tr><td>Membership Payment — ${taxableText}${row.method ? " · " + row.method : ""}${row.note ? " · " + row.note : ""}</td>
-          <td class="right">${Number(row.amount).toFixed(2)}</td></tr>
-      <tr><td></td><td class="right"><strong>Total: $${Number(row.amount).toFixed(2)}</strong></td></tr>
-    </table>
-
-    <div class="btnbar">
-      <button onclick="window.print()">Print</button>
-      <button onclick="window.close()">Close</button>
-    </div>
-  </div>
-</body></html>`);
-  } catch (e) { res.status(500).send(e.message); }
-});
-
-// ----- EXPENSES (unchanged endpoints but kept for completeness) ----------------
-app.get("/api/expenses", async (req, res) => {
-  try { res.json(await all(`SELECT * FROM expenses ORDER BY id DESC`)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post("/api/expenses", async (req, res) => {
-  const { vendor, amount, category, note } = req.body;
-  if (!amount) return res.status(400).json({ error: "amount required" });
-  try {
-    const out = await run(
-      `INSERT INTO expenses (vendor, amount, category, note) VALUES (?,?,?,?)`,
-      [vendor || "", parseFloat(amount), category || "", note || ""]
-    );
-    res.json({ ok: true, id: out.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.delete("/api/expenses/:id", async (req, res) => {
-  try { await run(`DELETE FROM expenses WHERE id=?`, [req.params.id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ----- server ------------------------------------------------------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (data at ${DATA_DIR})`);
-  console.log(`Connected to SQLite database: ${DB_FILE}`);
 });
