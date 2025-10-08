@@ -1,25 +1,25 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Main Menu</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <title>Dojo Apps</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 700px; margin: 48px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    ul { line-height: 1.9; font-size: 18px; }
-    a { text-decoration: none; }
+    body{font-family:system-ui,Arial,sans-serif;margin:24px}
+    h1{margin-bottom:8px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:16px}
+    a.card{display:block;padding:16px;border:1px solid #ddd;border-radius:10px;text-decoration:none;color:#111;background:#fafafa}
+    a.card:hover{background:#f3f3f3}
+    .small{color:#666;font-size:.9em;margin-top:10px}
   </style>
 </head>
 <body>
-  <h1>Dojo Manager</h1>
-  <ul>
-    <li><a href="students.html">Students</a></li>
-    <li><a href="payments.html">Payments</a></li>
-    <li><a href="attendance.html">Attendance</a></li>
-    <li><a href="leads.html">Leads</a></li>
-    <li><a href="expenses.html">Expenses</a></li>
-    <li><a href="accounting.html">Accounting</a></li>
-  </ul>
+  <h1>Dojo Apps</h1>
+  <div class="small">Choose a section:</div>
+  <div class="grid">
+    <a class="card" href="leads.html">Leads</a>
+    <a class="card" href="students.html">Students</a>
+    <a class="card" href="payments.html">Payments (Printable Receipts)</a>
+    <a class="card" href="accounting.html">Accounting</a>
+  </div>
 </body>
 </html>

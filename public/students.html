@@ -1,141 +1,100 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8"/>
   <title>Students</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:20px;}
-    h1{margin:0 0 12px}
-    form,table{max-width:1000px}
-    label{display:block;margin:8px 0 4px}
-    input,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
-    button{padding:8px 12px;border:1px solid #333;background:#111;color:#fff;border-radius:8px;cursor:pointer}
-    button.secondary{background:#fff;color:#111}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}
-    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
-    .dueSoon{background:#fff6e6}
-    .late{background:#ffeaea}
-    .muted{color:#777;font-size:12px}
-    .two{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    body{font-family:system-ui,Arial,sans-serif; margin:20px;}
+    .nav{margin-bottom:16px}
+    .nav a{text-decoration:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#f7f7f7}
+    form input, form button{padding:8px; margin-right:8px}
+    table{border-collapse:collapse; width:100%; margin-top:16px}
+    th, td{border:1px solid #ddd; padding:8px; text-align:left}
+    tr.overdue td{background:#ffe5e5}
+    .small{font-size:.9em; color:#666}
   </style>
 </head>
 <body>
+  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
   <h1>Students</h1>
 
   <form id="studentForm">
-    <div class="two">
-      <div><label>Name</label><input name="name" required></div>
-      <div><label>Phone</label><input name="phone"></div>
-      <div><label>Email</label><input name="email" type="email"></div>
-      <div><label>Join Date</label><input name="join_date" type="date"></div>
-    </div>
-    <div style="margin-top:10px"><button type="submit">Add Student</button></div>
+    <input name="name" placeholder="Name" required>
+    <input name="phone" placeholder="Phone">
+    <input name="email" placeholder="Email">
+    <button type="submit">Add Student</button>
+    <span class="small">join date = today; renewal = +28 days automatically</span>
   </form>
 
-  <table id="studentTable">
-    <thead><tr>
-      <th>ID</th><th>Name</th><th>Contact</th><th>Join</th><th>Renewal</th><th>Actions</th>
-    </tr></thead>
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th>
+        <th>Join</th><th>Renewal</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
     <tbody></tbody>
   </table>
 
 <script>
-const $ = sel => document.querySelector(sel);
-
-function isoToday(){ return new Date().toISOString().slice(0,10); }
-function addDaysISO(iso,days){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
-
-$('#studentForm [name=join_date]').value = isoToday();
-
-async function loadStudents(){
-  const res = await fetch('/api/students'); const rows = await res.json();
-  const tb = $('#studentTable tbody'); tb.innerHTML='';
-  const today = isoToday();
-
-  for(const r of rows){
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  const txt = await r.text();
+  try { return JSON.parse(txt); }
+  catch { return { ok:false, error:'Invalid JSON', raw:txt }; }
+}
+function isOverdue(yyyy_mm_dd){
+  if (!yyyy_mm_dd) return false;
+  const today = new Date().toISOString().slice(0,10);
+  return yyyy_mm_dd < today;
+}
+async function load(){
+  const data = await fetchJSON('/api/students');
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = '';
+  if (!data.ok){
+    tb.innerHTML = `<tr><td colspan="8">Error loading: ${data.error||data.raw}</td></tr>`;
+    return;
+  }
+  for (const s of data.students){
     const tr = document.createElement('tr');
-    let cls = '';
-    if(r.renewal_date){
-      if(r.renewal_date < today) cls = 'late';
-      else {
-        const soon = addDaysISO(today,7);
-        if(r.renewal_date <= soon) cls = 'dueSoon';
-      }
-    }
-    tr.className = cls;
-
-    const contact = [r.phone||'', r.email||''].filter(Boolean).join(' · ');
+    if (isOverdue(s.renewal_date)) tr.classList.add('overdue');
     tr.innerHTML = `
-      <td>${r.id}</td>
-      <td>${r.name||''}</td>
-      <td><div>${contact||'<span class="muted">—</span>'}</div></td>
-      <td>${r.join_date||''}</td>
-      <td>${r.renewal_date||''}</td>
-      <td class="row-actions">
-        <button data-act="edit" data-id="${r.id}" class="secondary">Edit</button>
-        <button data-act="delete" data-id="${r.id}" class="secondary">Delete</button>
-        <button data-act="archive" data-id="${r.id}">Archive → Old</button>
-      </td>
-    `;
+      <td>${s.id}</td>
+      <td>${s.name||''}</td>
+      <td>${s.phone||''}</td>
+      <td>${s.email||''}</td>
+      <td>${s.join_date||''}</td>
+      <td>${s.renewal_date||''}</td>
+      <td>${s.status||''}</td>
+      <td>
+        <button data-archive="${s.id}">Archive</button>
+      </td>`;
     tb.appendChild(tr);
   }
 }
-
-$('#studentForm').addEventListener('submit', async (e)=>{
+document.getElementById('studentForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const fd = new FormData(e.target);
   const body = Object.fromEntries(fd.entries());
-  if(!body.join_date) body.join_date = isoToday();
-  // server will auto-calc renewal if omitted
-  const res = await fetch('/api/students',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!res.ok) return alert('Save failed');
-  e.target.reset(); $('#studentForm [name=join_date]').value = isoToday();
-  await loadStudents();
+  const res = await fetchJSON('/api/students',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) { alert('Error: ' + res.error); return; }
+  e.target.reset();
+  load();
 });
-
-$('#studentTable').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('button'); if(!btn) return;
-  const id = btn.dataset.id; const act = btn.dataset.act;
-
-  if(act==='delete'){
-    if(!confirm(`Delete student #${id}?`)) return;
-    const res = await fetch(`/api/students/${id}`,{method:'DELETE'});
-    if(!res.ok) return alert('Delete failed'); return loadStudents();
-  }
-
-  if(act==='edit'){
-    const row = btn.closest('tr').children;
-    const current = {
-      name: row[1].textContent.trim(),
-      contact: row[2].textContent.trim(),
-      join_date: row[3].textContent.trim(),
-      renewal_date: row[4].textContent.trim(),
-    };
-    const name = prompt('Name:', current.name) || current.name;
-    const phone = prompt('Phone:', current.contact.split('·')[0]?.trim() || '') || '';
-    const email = prompt('Email:', current.contact.split('·')[1]?.trim() || '') || '';
-    const join_date = prompt('Join date (YYYY-MM-DD):', current.join_date || '') || current.join_date || '';
-    const renewal_date = prompt('Renewal date (YYYY-MM-DD):', current.renewal_date || '') || current.renewal_date || '';
-    const res = await fetch(`/api/students/${id}`,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,phone,email,join_date,renewal_date,status:'active'})
-    });
-    if(!res.ok) return alert('Update failed'); return loadStudents();
-  }
-
-  if(act==='archive'){
-    if(!confirm(`Move student #${id} to Old Students?`)) return;
-    const res = await fetch(`/api/students/${id}/archive`,{method:'POST'});
-    const out = await res.json();
-    if(!res.ok) return alert(out.error||'Archive failed');
-    await loadStudents();
-  }
+document.querySelector('#tbl').addEventListener('click', async (e)=>{
+  const id = e.target?.dataset?.archive;
+  if (!id) return;
+  if (!confirm('Archive this student?')) return;
+  const res = await fetchJSON(`/api/students/${id}/archive`, { method:'POST' });
+  if (!res.ok) { alert('Error: ' + res.error); return; }
+  load();
 });
-
-loadStudents();
+load();
 </script>
 </body>
 </html>

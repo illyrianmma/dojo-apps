@@ -1,102 +1,58 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8"/>
   <title>Accounting</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{font-family:system-ui,Arial,sans-serif;max-width:900px;margin:24px auto;padding:0 16px}
-    .card{border:1px solid #ddd;border-radius:10px;padding:12px;margin:12px 0}
-    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #bbb;margin-right:8px}
-    label{display:inline-block;margin:6px 8px 6px 0}
-    input,button{padding:8px;margin:6px 4px}
-    #err{white-space:pre-wrap;color:#b00020;background:#fff5f5;border:1px solid #f3caca;padding:8px;border-radius:8px;display:none}
-    #stats{font-size:.9rem;color:#666}
+    body{font-family:system-ui,Arial,sans-serif; margin:20px;}
+    .nav{margin-bottom:16px}
+    .nav a{text-decoration:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#f7f7f7}
+    table{border-collapse:collapse; margin-top:10px}
+    th, td{border:1px solid #ddd; padding:8px}
   </style>
 </head>
 <body>
+  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
   <h1>Accounting</h1>
-  <p><a href="/index.html">Back to Main</a></p>
+  <div id="msg">Loading…</div>
 
-  <div class="card">
-    <form id="range">
-      <label>From <input type="date" id="from"></label>
-      <label>To <input type="date" id="to"></label>
-      <button type="submit">Apply</button>
-      <button type="button" id="clear">Clear</button>
-      <span id="stats"></span>
-    </form>
-    <div id="err"></div>
-  </div>
-
-  <div class="card">
-    <h2>Income (Payments)</h2>
-    <span class="pill">Taxable: $<b id="i_tax">0.00</b></span>
-    <span class="pill">Non-Taxable: $<b id="i_nontax">0.00</b></span>
-    <span class="pill">Total: $<b id="i_total">0.00</b></span>
-  </div>
-
-  <div class="card">
-    <h2>Expenses</h2>
-    <span class="pill">Taxable: $<b id="e_tax">0.00</b></span>
-    <span class="pill">Non-Taxable: $<b id="e_nontax">0.00</b></span>
-    <span class="pill">Total: $<b id="e_total">0.00</b></span>
-  </div>
-
-  <div class="card">
-    <h2>Net (Income − Expenses)</h2>
-    <span class="pill">Net Total: $<b id="net_total">0.00</b></span>
-  </div>
+  <table>
+    <thead><tr><th></th><th>Taxable</th><th>Non-Taxable</th><th>Total</th></tr></thead>
+    <tbody>
+      <tr><td>Income</td><td id="p_tax">–</td><td id="p_ntax">–</td><td id="p_all">–</td></tr>
+      <tr><td>Expenses</td><td id="e_tax">–</td><td id="e_ntax">–</td><td id="e_all">–</td></tr>
+      <tr><td><b>Net</b></td><td id="n_tax">–</td><td id="n_ntax">–</td><td id="n_all">–</td></tr>
+    </tbody>
+  </table>
 
 <script>
-function $$(id){return document.getElementById(id)}
-function money(n){return (+n||0).toFixed(2)}
-function showErr(msg){ const e=$$('err'); e.style.display='block'; e.textContent=msg; }
-
-async function jsonOrThrow(r){
-  let t; try{ t=await r.json(); }catch{ throw new Error('Invalid JSON from '+r.url); }
-  if(!r.ok) throw new Error((t&&t.error)||('HTTP '+r.status+' '+r.url));
-  return t;
+async function fetchJSON(url){
+  const r = await fetch(url);
+  const t = await r.text();
+  try { return JSON.parse(t) } catch { return { ok:false, error:'Invalid JSON', raw:t } }
 }
-
-function qs(){
-  const p=new URLSearchParams();
-  const f=$$('from').value, t=$$('to').value;
-  if(f) p.set('from',f); if(t) p.set('to',t);
-  return p.toString() ? '?'+p.toString() : '';
-}
-
-async function load(){
-  $$('err').style.display='none';
-  $$('stats').textContent='Loading…';
-  try{
-    // tiny diagnostics (counts)
-    const st = await fetch('/api/accounting/stats').then(jsonOrThrow);
-    $$('stats').textContent = `(payments: ${st.payments.payments_count||0}, expenses: ${st.expenses.expenses_count||0})`;
-
-    const [inc, exp, all] = await Promise.all([
-      fetch('/api/payments/summary'+qs()).then(jsonOrThrow),
-      fetch('/api/expenses/summary'+qs()).then(jsonOrThrow),
-      fetch('/api/accounting/summary'+qs()).then(jsonOrThrow)
-    ]);
-
-    $$('i_tax').textContent = money(inc.taxable_total);
-    $$('i_nontax').textContent = money(inc.nontax_total);
-    $$('i_total').textContent = money(inc.grand_total);
-
-    $$('e_tax').textContent = money(exp.taxable_total);
-    $$('e_nontax').textContent = money(exp.nontax_total);
-    $$('e_total').textContent = money(exp.grand_total);
-
-    $$('net_total').textContent = money(all.net_total);
-  }catch(err){
-    showErr(err.message);
+function num(x){ return Number(x||0).toFixed(2); }
+(async ()=>{
+  const data = await fetchJSON('/api/accounting');
+  const msg = document.getElementById('msg');
+  if (!data.ok){
+    msg.textContent = 'Error: ' + (data.error || 'invalid JSON');
+    console.error('Accounting raw:', data.raw);
+    return;
   }
-}
+  msg.textContent = '';
+  document.getElementById('p_tax').textContent = num(data.payments.taxable);
+  document.getElementById('p_ntax').textContent = num(data.payments.nonTaxable);
+  document.getElementById('p_all').textContent  = num(data.payments.total);
 
-document.getElementById('range').addEventListener('submit', (e)=>{e.preventDefault(); load();});
-document.getElementById('clear').addEventListener('click', ()=>{$$('from').value='';$$('to').value='';load();});
-load();
+  document.getElementById('e_tax').textContent = num(data.expenses.taxable);
+  document.getElementById('e_ntax').textContent = num(data.expenses.nonTaxable);
+  document.getElementById('e_all').textContent  = num(data.expenses.total);
+
+  document.getElementById('n_tax').textContent = num(data.net.taxable);
+  document.getElementById('n_ntax').textContent = num(data.net.nonTaxable);
+  document.getElementById('n_all').textContent  = num(data.net.total);
+})();
 </script>
 </body>
 </html>

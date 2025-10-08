@@ -1,112 +1,90 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8"/>
   <title>Leads</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:20px;}
-    h1{margin:0 0 12px}
-    form,table{max-width:900px}
-    label{display:block;margin:8px 0 4px}
-    input,textarea,select{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px}
-    button{padding:8px 12px;border:1px solid #333;background:#111;color:#fff;border-radius:8px;cursor:pointer}
-    button.secondary{background:#fff;color:#111}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{border-bottom:1px solid #eee;padding:8px;text-align:left}
-    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
-    .muted{color:#777;font-size:12px}
+    body{font-family:system-ui,Arial,sans-serif;margin:20px}
+    .nav{margin-bottom:16px}
+    .nav a{text-decoration:none;padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7}
+    form input, form textarea, form button{padding:8px;margin:4px 6px 4px 0}
+    form textarea{vertical-align:middle}
+    table{border-collapse:collapse;width:100%;margin-top:16px}
+    th, td{border:1px solid #ddd;padding:8px;text-align:left}
+    .small{font-size:.9em;color:#666}
+    button{cursor:pointer}
   </style>
 </head>
 <body>
+  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
   <h1>Leads</h1>
 
   <form id="leadForm">
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:900px">
-      <div><label>Name</label><input name="name" required></div>
-      <div><label>Phone</label><input name="phone"></div>
-      <div><label>Email</label><input name="email" type="email"></div>
-      <div><label>Note</label><input name="note"></div>
-    </div>
-    <div style="margin-top:10px"><button type="submit">Add Lead</button></div>
+    <input name="name" placeholder="Name" required>
+    <input name="phone" placeholder="Phone">
+    <input name="email" placeholder="Email">
+    <textarea name="notes" placeholder="Notes" rows="2" cols="30"></textarea>
+    <button type="submit">Add Lead</button>
+    <span class="small">Saved instantly; you can convert to student later.</span>
   </form>
 
-  <table id="leadTable">
-    <thead><tr>
-      <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Created</th><th>Actions</th>
-    </tr></thead>
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th><th>Created</th><th>Actions</th>
+      </tr>
+    </thead>
     <tbody></tbody>
   </table>
 
 <script>
-const $ = sel => document.querySelector(sel);
-const T = (strings, ...vals) => strings.map((s,i)=>s+(vals[i]??"")).join("");
-
-async function loadLeads(){
-  const res = await fetch('/api/leads'); const rows = await res.json();
-  const tb = $('#leadTable tbody'); tb.innerHTML = '';
-  for(const r of rows){
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  const t = await r.text();
+  try { return JSON.parse(t); } catch { return { ok:false, error:'Invalid JSON', raw:t }; }
+}
+async function load(){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
+  const data = await fetchJSON('/api/leads');
+  if (!data.ok){ tb.innerHTML = `<tr><td colspan="7">Error: ${data.error||data.raw}</td></tr>`; return; }
+  tb.innerHTML = '';
+  for (const L of data.leads){
     const tr = document.createElement('tr');
-    tr.innerHTML = T`
-      <td>${r.id}</td>
-      <td>${r.name||''}<div class="muted">${r.note||''}</div></td>
-      <td>${r.phone||''}</td>
-      <td>${r.email||''}</td>
-      <td>${r.created_at||''}</td>
-      <td class="row-actions">
-        <button data-act="edit" data-id="${r.id}" class="secondary">Edit</button>
-        <button data-act="delete" data-id="${r.id}" class="secondary">Delete</button>
-        <button data-act="convert" data-id="${r.id}">Convert → Student</button>
+    tr.innerHTML = `
+      <td>${L.id}</td>
+      <td>${L.name||''}</td>
+      <td>${L.phone||''}</td>
+      <td>${L.email||''}</td>
+      <td>${L.notes||''}</td>
+      <td>${L.created_at||''}</td>
+      <td>
+        <button data-convert="${L.id}">Convert → Student</button>
       </td>`;
     tb.appendChild(tr);
   }
 }
-
-$('#leadForm').addEventListener('submit', async (e)=>{
+document.getElementById('leadForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const fd = new FormData(e.target);
   const body = Object.fromEntries(fd.entries());
-  const res = await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!res.ok){ alert('Save failed'); return;}
-  e.target.reset(); await loadLeads();
+  const res = await fetchJSON('/api/leads',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if (!res.ok){ alert('Error: ' + res.error); return; }
+  e.target.reset(); load();
 });
-
-$('#leadTable').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('button'); if(!btn) return;
-  const id = btn.dataset.id; const act = btn.dataset.act;
-
-  if(act==='delete'){
-    if(!confirm(`Delete lead #${id}?`)) return;
-    const res = await fetch(`/api/leads/${id}`,{method:'DELETE'});
-    if(!res.ok) return alert('Delete failed'); return loadLeads();
-  }
-
-  if(act==='edit'){
-    // simple prompt edit
-    const row = [...$('#leadTable tbody').children].find(tr=>tr.firstChild.textContent==id);
-    const name = prompt('Name:', row.children[1].firstChild.textContent) || '';
-    const phone = prompt('Phone:', row.children[2].textContent) || '';
-    const email = prompt('Email:', row.children[3].textContent) || '';
-    const note = prompt('Note:', row.children[1].querySelector('.muted')?.textContent || '') || '';
-    const res = await fetch(`/api/leads/${id}`,{
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,phone,email,note})
-    });
-    if(!res.ok) return alert('Update failed'); return loadLeads();
-  }
-
-  if(act==='convert'){
-    if(!confirm(`Convert lead #${id} to Student?`)) return;
-    const res = await fetch(`/api/leads/${id}/convert`,{method:'POST'});
-    const out = await res.json();
-    if(!res.ok) return alert(out.error || 'Convert failed');
-    alert(`Lead converted. New student id: ${out.studentId}`);
-    await loadLeads();
-  }
+document.querySelector('#tbl').addEventListener('click', async (e)=>{
+  const id = e.target?.dataset?.convert;
+  if (!id) return;
+  if (!confirm('Convert this lead to a Student now?')) return;
+  const res = await fetchJSON(`/api/leads/${id}/convert`, { method:'POST' });
+  if (!res.ok){ alert('Error: ' + res.error); return; }
+  alert(`Converted! New student #${res.student_id}`);
+  load();
 });
-
-loadLeads();
+load();
 </script>
 </body>
 </html>
