@@ -1,0 +1,16 @@
+﻿services:
+- type: web
+  name: dojo-apps
+  env: node
+  plan: free
+  buildCommand: npm install
+  startCommand: node server.js
+  envVars:
+  - key: DB_FILE
+    value: /data/dojo.db
+  - key: ADMIN_TOKEN
+    sync: false   # you will fill this in the Render dashboard
+  disk:
+    name: dojo-data
+    mountPath: /data
+    sizeGB: 1
