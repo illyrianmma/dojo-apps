@@ -14,6 +14,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use((req,res,next)=>{ res.setHeader('Cache-Control','no-store'); next(); });
 app.use(express.static(PUBLIC_DIR));
+const ADMIN_KEY = process.env.DOJO_ADMIN_KEY || '';
+function requireAdmin(req, res, next) {
+  // allow GETs freely; protect write methods with a header or query ?key=
+  if (req.method === 'GET') return next();
+  const k = req.headers['x-admin-key'] || req.query.key || '';
+  if (!ADMIN_KEY || k === ADMIN_KEY) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+app.use(requireAdmin);
 
 const DB_PATH = process.env.DOJO_DB || path.join(__dirname, 'dojo.db');
 console.log('[dojo] DB =', DB_PATH);
@@ -287,4 +296,5 @@ app.get('/api/summary', async (req, res) => {
   try { await migrate(); app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`)); }
   catch (err) { console.error('Migration/start error:', err); process.exit(1); }
 })();
+
 
