@@ -1,26 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Dojo Dashboard</title>
-<style>
-  body{font-family:system-ui,Arial,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px}
-  h1,h2{margin:8px 0}
-  table{width:100%;border-collapse:collapse;margin:12px 0}
-  th,td{border:1px solid #ddd;padding:8px;text-align:left}
-  th{background:#f5f5f5}
-  tr.overdue{background:#ffe5e5}
-  tr.due_soon{background:#fff0e0}
-  tr.lead-warn{background:#fff9db}
-  tr.lead-danger{background:#ffe5e5}
-  .row{display:flex;gap:16px;flex-wrap:wrap}
-  .card{flex:1 1 320px;border:1px solid #ddd;border-radius:10px;padding:12px}
-  .muted{color:#666;font-size:0.9rem}
-  .btn{display:inline-block;padding:8px 12px;border:1px solid #333;border-radius:8px;text-decoration:none}
-  .btn:active{transform:translateY(1px)}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.8rem;border:1px solid #bbb}
-</style>
+  <link rel="stylesheet" href="styles.css?v=1" />
+
 </head>
 <body>
   <h1>Dojo Dashboard</h1>
@@ -41,7 +26,7 @@
             <th>Start</th><th>Renewal</th><th>Status</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        <tbody><tr><td colspan="6" class="muted">Loadingâ€¦</td></tr></tbody>
       </table>
     </div>
 
@@ -52,7 +37,7 @@
         <thead>
           <tr><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Age (days)</th></tr>
         </thead>
-        <tbody><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        <tbody><tr><td colspan="5" class="muted">Loadingâ€¦</td></tr></tbody>
       </table>
     </div>
 
@@ -78,7 +63,7 @@ function setMoney(id,val){document.getElementById(id).textContent=(+val||0).toFi
 
 async function loadStudents(){
   const tb=document.querySelector("#studentsTbl tbody");
-  tb.innerHTML='<tr><td colspan="6" class="muted">Loading…</td></tr>';
+  tb.innerHTML='<tr><td colspan="6" class="muted">Loadingâ€¦</td></tr>';
   try{
     const r=await fetch('/api/students'); const rows=await r.json();
     if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="6" class="muted">No students</td></tr>';return;}
@@ -101,7 +86,7 @@ async function loadStudents(){
 
 async function loadLeads(){
   const tb=document.querySelector("#leadsTbl tbody");
-  tb.innerHTML='<tr><td colspan="5" class="muted">Loading…</td></tr>';
+  tb.innerHTML='<tr><td colspan="5" class="muted">Loadingâ€¦</td></tr>';
   try{
     const r=await fetch('/api/leads'); const rows=await r.json();
     if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="5" class="muted">No leads</td></tr>';return;}
@@ -146,3 +131,4 @@ loadTotals();
 </script>
 </body>
 </html>
+

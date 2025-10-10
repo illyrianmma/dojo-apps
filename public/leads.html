@@ -1,90 +1,96 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Leads</title>
-  <style>
-    body{font-family:system-ui,Arial,sans-serif;margin:20px}
-    .nav{margin-bottom:16px}
-    .nav a{text-decoration:none;padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7}
-    form input, form textarea, form button{padding:8px;margin:4px 6px 4px 0}
-    form textarea{vertical-align:middle}
-    table{border-collapse:collapse;width:100%;margin-top:16px}
-    th, td{border:1px solid #ddd;padding:8px;text-align:left}
-    .small{font-size:.9em;color:#666}
-    button{cursor:pointer}
-  </style>
-</head>
-<body>
-  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
-  <h1>Leads</h1>
+﻿<!-- leads.html build v2025-10-10-6 (adds follow-up badges/colors) -->
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Leads</title>
+  <link rel="stylesheet" href="styles.css?v=2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head><body>
+<h1>Leads</h1><p><a href="index.html">← Back to Main</a></p>
 
-  <form id="leadForm">
-    <input name="name" placeholder="Name" required>
-    <input name="phone" placeholder="Phone">
-    <input name="email" placeholder="Email">
-    <textarea name="notes" placeholder="Notes" rows="2" cols="30"></textarea>
-    <button type="submit">Add Lead</button>
-    <span class="small">Saved instantly; you can convert to student later.</span>
-  </form>
+<div id="err" class="error"></div>
 
-  <table id="tbl">
-    <thead>
-      <tr>
-        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Notes</th><th>Created</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<h2>Add Lead</h2>
+<div class="row">
+  <input id="name" placeholder="Name" />
+  <input id="phone" placeholder="Phone" />
+  <input id="email" placeholder="Email" />
+  <input id="interested_program" placeholder="Interested Program" />
+  <input id="follow_up_date" type="date" />
+  <select id="status"><option>new</option><option>contacted</option><option>converted</option><option>lost</option></select>
+  <input id="notes" placeholder="Notes" />
+  <button id="addBtn">Add Lead</button>
+</div>
+
+<h2>Leads List</h2>
+<table id="leadTable"><thead>
+  <tr><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Follow-up</th><th>Status</th><th>Notes</th><th>Actions</th></tr>
+</thead><tbody></tbody></table>
+<p class="note muted">Marker: leads.html build v2025-10-10-6</p>
 
 <script>
-async function fetchJSON(url, opts){
-  const r = await fetch(url, opts);
-  const t = await r.text();
-  try { return JSON.parse(t); } catch { return { ok:false, error:'Invalid JSON', raw:t }; }
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const err=$('#err'); function showError(m){err.textContent=m||''; err.style.display=m?'block':'none';}
+function todayISO(){return new Date().toISOString().slice(0,10)}
+function daysOverdue(iso){ if(!iso) return null; const delta=Math.floor((new Date(todayISO())-new Date(iso))/(1000*60*60*24)); return delta; }
+function followBadge(iso,status){
+  if(!iso) return {html:'<span class="badge info">No date</span>', row:''};
+  if(status==='converted' || status==='lost') return {html:'<span class="badge ok">'+status+'</span>', row:''};
+  const d=daysOverdue(iso); // days past due (>=0 means due today/past)
+  if (d===null) return {html:'',row:''};
+  if (d < 0) return {html:`<span class="badge info">In ${-d}d</span>`, row:''};       // future date
+  if (d >= 30) return {html:`<span class="badge danger2">${d}d overdue</span>`, row:'followup-4'};
+  if (d >= 14) return {html:`<span class="badge danger">${d}d overdue</span>`,  row:'followup-3'};
+  if (d >= 7)  return {html:`<span class="badge warn2">${d}d overdue</span>`,  row:'followup-2'};
+  if (d >= 3)  return {html:`<span class="badge warn">${d}d overdue</span>`,   row:'followup-1'};
+  if (d >= 0)  return {html:`<span class="badge warn">Due</span>`,             row:'followup-1'};
+  return {html:'',row:''};
 }
-async function load(){
-  const tb = document.querySelector('#tbl tbody');
-  tb.innerHTML = '<tr><td colspan="7">Loading…</td></tr>';
-  const data = await fetchJSON('/api/leads');
-  if (!data.ok){ tb.innerHTML = `<tr><td colspan="7">Error: ${data.error||data.raw}</td></tr>`; return; }
-  tb.innerHTML = '';
-  for (const L of data.leads){
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${L.id}</td>
-      <td>${L.name||''}</td>
-      <td>${L.phone||''}</td>
-      <td>${L.email||''}</td>
-      <td>${L.notes||''}</td>
-      <td>${L.created_at||''}</td>
+
+async function loadLeads(){
+  showError('');
+  const arr=await (await fetch('/api/leads')).json();
+  const tbody=$('#leadTable tbody'); tbody.innerHTML='';
+  for(const l of arr){
+    const sev=followBadge(l.follow_up_date,l.status);
+    const tr=document.createElement('tr');
+    if(sev.row) tr.classList.add(sev.row);
+    tr.innerHTML=`
+      <td>${l.name||''}</td>
+      <td>${l.phone||''}</td>
+      <td>${l.email||''}</td>
+      <td>${l.interested_program||''}</td>
+      <td>${(l.follow_up_date||'')} ${sev.html}</td>
       <td>
-        <button data-convert="${L.id}">Convert → Student</button>
+        <select data-id="${l.id}" class="status">
+          ${['new','contacted','converted','lost'].map(s=>`<option ${s===l.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td>${l.notes||''}</td>
+      <td>
+        <button data-id="${l.id}" class="del">Delete</button>
+        ${l.status!=='converted' ? `<button data-id="${l.id}" class="convert">Convert to Student</button>` : ''}
       </td>`;
-    tb.appendChild(tr);
+    tbody.appendChild(tr);
   }
-}
-document.getElementById('leadForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = Object.fromEntries(fd.entries());
-  const res = await fetchJSON('/api/leads',{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
+  $$('#leadTable .del').forEach(b=>b.onclick=async()=>{await fetch('/api/leads/'+b.dataset.id,{method:'DELETE'}); loadLeads();});
+  $$('#leadTable .status').forEach(sel=> sel.onchange=async()=>{await fetch('/api/leads/'+sel.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:sel.value})}); loadLeads();});
+  $$('#leadTable .convert').forEach(btn => btn.onclick = async () => {
+    showError('');
+    try{
+      const res = await fetch('/api/leads/'+btn.dataset.id+'/convert',{method:'POST'});
+      if(!res.ok){ throw new Error(await res.text()); }
+      const info = await res.json();
+      alert(info.created_new ? 'Student created from lead.' : 'Existing student updated from lead.');
+      loadLeads();
+    }catch(e){ showError(e.message||'Conversion failed.'); }
   });
-  if (!res.ok){ alert('Error: ' + res.error); return; }
-  e.target.reset(); load();
-});
-document.querySelector('#tbl').addEventListener('click', async (e)=>{
-  const id = e.target?.dataset?.convert;
-  if (!id) return;
-  if (!confirm('Convert this lead to a Student now?')) return;
-  const res = await fetchJSON(`/api/leads/${id}/convert`, { method:'POST' });
-  if (!res.ok){ alert('Error: ' + res.error); return; }
-  alert(`Converted! New student #${res.student_id}`);
-  load();
-});
-load();
+}
+
+$('#addBtn').onclick=async()=>{
+  showError('');
+  const p={name:$('#name').value,phone:$('#phone').value,email:$('#email').value,interested_program:$('#interested_program').value,follow_up_date:$('#follow_up_date').value,status:$('#status').value,notes:$('#notes').value};
+  await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+  $('#name').value=$('#phone').value=$('#email').value=''; $('#interested_program').value=$('#follow_up_date').value=''; $('#notes').value='';
+  loadLeads();
+};
+loadLeads();
 </script>
-</body>
-</html>
+</body></html>

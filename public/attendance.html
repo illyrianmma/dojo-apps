@@ -1,37 +1,21 @@
-﻿<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Attendance</title>
-<style>
-  body{font-family:Arial, sans-serif;max-width:900px;margin:24px auto}
-  form input, form select{display:block;margin:6px 0;padding:10px;font-size:16px;width:100%}
-  button{padding:12px 18px;font-size:18px}
-  .stamp{margin-top:8px;color:#555}
-</style></head>
-<body>
-  <a href="index.html">⬅ Back</a>
-  <h1>Attendance</h1>
-  <form id="f">
-    <input id="student_id" type="number" min="1" placeholder="Student ID" required>
-    <input id="date" type="date" required>
-    <select id="status"><option>Present</option><option>Absent</option></select>
-    <button type="submit">✅ Mark Attendance</button>
-    <button type="button" id="refresh">🔄 Refresh List</button>
-  </form>
-  <h3>Records</h3>
-  <ul id="list"></ul>
-  <div class="stamp">BUILD: 2025-09-29 12:55 (attendance)</div>
+﻿<!-- attendance.html build v2025-10-10-2 -->
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Attendance</title>
+  <link rel="stylesheet" href="styles.css?v=1" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+</head><body>
+<h1>Attendance</h1><p><a href="index.html">← Back to Main</a></p>
+<h2>Mark Attendance</h2>
+<div class="row"><select id="studentSelect"></select><input id="date" type="date" /><label><input id="present" type="checkbox" checked /> Present</label><button id="markBtn">Mark</button></div>
+<h2>Records</h2>
+<table id="attTable"><thead><tr><th>Date</th><th>Student</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table>
+<p>Marker: attendance.html build v2025-10-10-2</p>
 <script>
-const f=document.getElementById('f'); const refresh=document.getElementById('refresh');
-f.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const data={student_id:+f.student_id.value, date:f.date.value, status:f.status.value};
-  await fetch('/api/attendance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  f.reset(); load();
-});
-refresh.addEventListener('click', load);
-async function load(){
-  const res=await fetch('/api/attendance'); const rows=await res.json();
-  document.getElementById('list').innerHTML=rows.map(r=>`<li>#${r.id} — Student ${r.student_id} — ${r.date} — ${r.status}</li>`).join('');
-}
-load();
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+document.getElementById('date').value=new Date().toISOString().slice(0,10);
+async function loadStudents(){const d=await (await fetch('/api/students?active=1')).json(); $('#studentSelect').innerHTML=d.map(s=>`<option value="${s.id}">${s.first_name||''} ${s.last_name||''}</option>`).join('')}
+async function loadAttendance(){const arr=await (await fetch('/api/attendance')).json(); const tbody=$('#attTable tbody'); tbody.innerHTML=''; for(const a of arr){const tr=document.createElement('tr'); tr.innerHTML=`<td>${a.date||''}</td><td>${(a.first_name||'')+' '+(a.last_name||'')}</td><td>${a.present?'Present':'Absent'}</td><td><button data-id="${a.id}" class="del">Delete</button></td>`; tbody.appendChild(tr)} $$('#attTable .del').forEach(b=>b.onclick=async()=>{await fetch('/api/attendance/'+b.dataset.id,{method:'DELETE'}); loadAttendance();})}
+$('#markBtn').onclick=async()=>{const p={student_id:$('#studentSelect').value,date:$('#date').value,present:$('#present').checked}; await fetch('/api/attendance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}); loadAttendance();}
+loadStudents(); loadAttendance();
 </script>
 </body></html>
+

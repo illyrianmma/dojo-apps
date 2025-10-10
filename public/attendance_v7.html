@@ -1,28 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Attendance</title>
+  <link rel="stylesheet" href="styles.css?v=1" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    form { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
-    label { display:block; margin-top:8px; font-size:14px; }
-    select, input { width:100%; padding:8px; box-sizing:border-box; }
-    .row { display:grid; gap:12px; grid-template-columns: repeat(2, 1fr); }
-    .actions { margin-top:10px; display:flex; gap:8px; }
-    table { width:100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border:1px solid #eee; padding:8px; font-size:14px; vertical-align: top; }
-    th { background:#f9f9f9; }
-    .msg { margin:8px 0; }
-    .ok{color:#137333} .err{color:#b00020}
-  </style>
+  
 </head>
 <body>
   <div style="display:flex; justify-content:space-between; align-items:center;">
     <h1>Attendance</h1>
-    <a href="index.html">← Back to Main Page</a>
+    <a href="index.html">â† Back to Main Page</a>
   </div>
 
   <div id="msg" class="msg"></div>
@@ -62,7 +50,7 @@
       </tr>
     </thead>
     <tbody id="attendanceBody">
-      <tr><td colspan="5">Loading…</td></tr>
+      <tr><td colspan="5">Loadingâ€¦</td></tr>
     </tbody>
   </table>
 
@@ -81,7 +69,7 @@ function setToday(){
 
 async function loadStudents(){
   var sel = $('student_id');
-  sel.innerHTML = '<option>Loading…</option>';
+  sel.innerHTML = '<option>Loadingâ€¦</option>';
   try{
     var res = await fetch('/api/students');
     var data = await res.json();
@@ -104,7 +92,7 @@ async function loadStudents(){
 
 async function loadAttendance(){
   var tbody = $('attendanceBody');
-  tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5">Loadingâ€¦</td></tr>';
   try{
     var res = await fetch('/api/attendance');
     var data = await res.json();
@@ -180,3 +168,4 @@ loadAttendance();
 </script>
 </body>
 </html>
+

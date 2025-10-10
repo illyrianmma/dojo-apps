@@ -1,72 +1,91 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8"/>
   <title>Old Students</title>
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    th { background: #f2f2f2; }
-    button { padding: 4px 8px; margin: 0 2px; }
+    body{font-family:Arial,Helvetica,sans-serif;margin:16px}
+    .nav a{margin-right:10px}
+    table{border-collapse:collapse;width:100%;margin-top:12px}
+    th,td{border:1px solid #ddd;padding:6px}
+    tr:nth-child(even){background:#fafafa}
+    .actions button{margin-right:6px}
   </style>
 </head>
 <body>
-  <h1>Old Students</h1>
-  <p>
-    <a href="index.html">Back to Home</a> | 
-    <a href="students.html">Go to Students</a>
-  </p>
+  <div class="nav">
+    <a href="index.html">⬅ Back to Main</a> |
+    <a href="students.html">Students</a> |
+    <a href="leads.html">Leads</a> |
+    <a href="payments.html">Payments</a> |
+    <a href="expenses.html">Expenses</a> |
+    <a href="accounting.html">Accounting</a>
+  </div>
 
-  <h2>Old Students List</h2>
-  <table id="oldStudentsTable">
+  <h1>Old Students (Archived)</h1>
+
+  <table id="tbl">
     <thead>
-      <tr>
-        <th>ID</th>
-        <th>First Name</th>
-        <th>Last Name</th>
-        <th>Phone</th>
-        <th>Email</th>
-        <th>Program</th>
-        <th>Start</th>
-        <th>Renewal</th>
-        <th>Actions</th>
-      </tr>
+      <tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Join</th><th>Renewal</th><th>Status</th><th>Actions</th></tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <script>
-    async function loadOldStudents() {
-      const res = await fetch('/api/old-students');
-      const students = await res.json();
-      const tbody = document.querySelector('#oldStudentsTable tbody');
-      tbody.innerHTML = '';
-      students.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${s.id}</td>
-          <td>${s.first_name}</td>
-          <td>${s.last_name}</td>
-          <td>${s.phone || ''}</td>
-          <td>${s.email || ''}</td>
-          <td>${s.program || ''}</td>
-          <td>${s.start_date || ''}</td>
-          <td>${s.renewal_date || ''}</td>
-          <td><button onclick="deleteOldStudent(${s.id})">Delete</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
+<script>
+const TBody = document.querySelector('#tbl tbody');
 
-    async function deleteOldStudent(id) {
-      if (!confirm('Delete this old student?')) return;
-      await fetch('/api/old-students/' + id, { method: 'DELETE' });
-      loadOldStudents();
-    }
-
-    loadOldStudents();
-  </script>
+async function load(){
+  const rows = await (await fetch('/api/students?status=archived')).json();
+  TBody.innerHTML = '';
+  if (!rows.length){
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 8; td.textContent = 'No archived students.';
+    tr.appendChild(td); TBody.appendChild(tr);
+    return;
+  }
+  for (const r of rows){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.name||''}</td>
+      <td>${r.phone||''}</td>
+      <td>${r.email||''}</td>
+      <td>${r.join_date||''}</td>
+      <td>${r.renewal_date||''}</td>
+      <td>${r.status||''}</td>
+      <td class="actions">
+        <button data-act="unarchive" data-id="${r.id}">Unarchive</button>
+        <button data-act="edit" data-id="${r.id}">Edit</button>
+        <button data-act="del" data-id="${r.id}">Delete</button>
+      </td>
+    `;
+    TBody.appendChild(tr);
+  }
+}
+TBody.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const id = btn.dataset.id;
+  const tr = btn.closest('tr').children;
+  if (btn.dataset.act === 'unarchive'){
+    await fetch(`/api/students/${id}/unarchive`, {method:'POST'});
+    load();
+  } else if (btn.dataset.act === 'edit'){
+    const name = prompt('Name', tr[1].textContent) ?? tr[1].textContent;
+    const phone = prompt('Phone', tr[2].textContent) ?? tr[2].textContent;
+    const email = prompt('Email', tr[3].textContent) ?? tr[3].textContent;
+    const join_date = prompt('Join (YYYY-MM-DD)', tr[4].textContent) ?? tr[4].textContent;
+    const renewal_date = prompt('Renewal (YYYY-MM-DD)', tr[5].textContent) ?? tr[5].textContent;
+    await fetch(`/api/students/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, phone, email, join_date, renewal_date})});
+    load();
+  } else if (btn.dataset.act === 'del'){
+    if (!confirm('Delete this student?')) return;
+    await fetch(`/api/students/${id}`, {method:'DELETE'});
+    load();
+  }
+});
+load();
+</script>
 </body>
 </html>
-

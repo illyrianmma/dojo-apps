@@ -1,0 +1,94 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Old Students â€” Dojo Apps</title>
+  <link rel="stylesheet" href="styles.css?v=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  
+</head>
+<body>
+  <a class="back" href="/index.html">â¬… Back to Main</a>
+  <div class="top">
+    <h1>Old Students (Archived)</h1>
+    <input type="search" id="q" placeholder="Search name, phone, emailâ€¦" />
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Join</th><th>Renewal</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+<script>
+const state={rows:[],filtered:[]};
+function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+async function load(){
+  // Prefer a dedicated endpoint if your server has /api/old-students.
+  // If not, fall back to /api/students and filter status === 'old'.
+  let arr=[];
+  try{
+    const r = await fetch('/api/old-students');
+    if(r.ok){ arr = await r.json(); }
+    else throw new Error('no /api/old-students');
+  }catch{
+    const r2 = await fetch('/api/students');
+    const all = await r2.json();
+    arr = all.filter(s => String(s.status||'').toLowerCase()==='old' || String(s.status||'').toLowerCase()==='archived');
+  }
+  state.rows = arr;
+  apply();
+}
+
+function apply(){
+  const q = (document.getElementById('q').value||'').toLowerCase().trim();
+  state.filtered = state.rows.filter(s=>{
+    const hay = [s.name,s.phone,s.email].map(x=>String(x||'').toLowerCase()).join(' ');
+    return !q || hay.includes(q);
+  });
+  render();
+}
+
+function render(){
+  const tb = document.querySelector('#tbl tbody');
+  tb.innerHTML = state.filtered.map(s=>`
+    <tr data-id="${s.id}">
+      <td>${s.id}</td>
+      <td>${escapeHtml(s.name)}</td>
+      <td>${escapeHtml(s.phone||'')}</td>
+      <td>${escapeHtml(s.email||'')}</td>
+      <td>${escapeHtml((s.join_date||s.start_date||'').slice(0,10))}</td>
+      <td>${escapeHtml((s.renewal_date||'').slice(0,10))}</td>
+      <td>${escapeHtml(s.status||'old')}</td>
+      <td class="actions">
+        <button class="primary" onclick="restore(${s.id})">Restore</button>
+        <button class="danger" onclick="removeRow(${s.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('') || `<tr><td colspan="8">No archived students.</td></tr>`;
+}
+
+async function restore(id){
+  if(!confirm('Restore this student to Active?')) return;
+  const r = await fetch('/api/students/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'active'})});
+  if(!r.ok){ alert('Restore failed'); return; }
+  await load();
+}
+
+async function removeRow(id){
+  if(!confirm('Permanently DELETE this student?')) return;
+  const r = await fetch('/api/students/'+id,{method:'DELETE'});
+  if(!r.ok){ alert('Delete failed'); return; }
+  await load();
+}
+
+document.getElementById('q').addEventListener('input', apply);
+load();
+</script>
+</body>
+</html>
+

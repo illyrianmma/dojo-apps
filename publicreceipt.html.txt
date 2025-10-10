@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Receipt</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:40px}
+    h1{margin:0 0 10px}
+    .meta,.items,.totals{margin-top:15px}
+    .row{display:flex;justify-content:space-between}
+    .print{position:fixed;top:10px;right:10px}
+    @media print{.print{display:none}}
+    .box{border:1px solid #ccc;padding:12px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <button class="print" onclick="window.print()">Print</button>
+  <h1>Payment Receipt</h1>
+  <div id="content" class="box">Loading…</div>
+<script>
+function money(n){return Number(n||0).toFixed(2);}
+async function main(){
+  const id = new URLSearchParams(location.search).get('id');
+  if(!id){ document.getElementById('content').textContent='Missing id'; return; }
+  const r = await fetch('/api/payments/'+id);
+  if(!r.ok){ document.getElementById('content').textContent='Not found'; return; }
+  const p = await r.json();
+  const html = `
+    <div class="meta">
+      <div class="row"><div><strong>Receipt #:</strong> ${p.receipt_no||p.id}</div><div><strong>Date:</strong> ${p.date||''}</div></div>
+      <div class="row"><div><strong>Name:</strong> ${p.student_name||''}</div><div><strong>Method:</strong> ${p.method||''}</div></div>
+    </div>
+    <div class="items">
+      <div><strong>Amount:</strong> $${money(p.amount)} ${p.taxable?'(Taxable)':''}</div>
+      ${p.note ? `<div><strong>Note:</strong> ${p.note}</div>` : ''}
+    </div>
+    <div class="totals">
+      <div class="row"><div><strong>Total Paid</strong></div><div><strong>$${money(p.amount)}</strong></div></div>
+    </div>`;
+  document.getElementById('content').innerHTML = html;
+}
+main();
+</script>
+</body>
+</html>

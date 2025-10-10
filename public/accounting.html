@@ -1,58 +1,23 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Accounting</title>
-  <style>
-    body{font-family:system-ui,Arial,sans-serif; margin:20px;}
-    .nav{margin-bottom:16px}
-    .nav a{text-decoration:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#f7f7f7}
-    table{border-collapse:collapse; margin-top:10px}
-    th, td{border:1px solid #ddd; padding:8px}
-  </style>
-</head>
-<body>
-  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
-  <h1>Accounting</h1>
-  <div id="msg">Loading…</div>
+﻿<!-- accounting.html build v2025-10-10-2 -->
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Accounting</title>
+  <link rel="stylesheet" href="styles.css?v=1" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <table>
-    <thead><tr><th></th><th>Taxable</th><th>Non-Taxable</th><th>Total</th></tr></thead>
-    <tbody>
-      <tr><td>Income</td><td id="p_tax">–</td><td id="p_ntax">–</td><td id="p_all">–</td></tr>
-      <tr><td>Expenses</td><td id="e_tax">–</td><td id="e_ntax">–</td><td id="e_all">–</td></tr>
-      <tr><td><b>Net</b></td><td id="n_tax">–</td><td id="n_ntax">–</td><td id="n_all">–</td></tr>
-    </tbody>
-  </table>
-
+</head><body>
+<h1>Accounting</h1><p><a href="index.html">← Back to Main</a></p>
+<div id="summary" class="card">
+  <h2>Summary</h2>
+  <dl>
+    <dt>Total Income</dt><dd id="income">$0.00</dd>
+    <dt>Taxable Income</dt><dd id="income_taxable">$0.00</dd>
+    <dt>Total Expenses</dt><dd id="expenses">$0.00</dd>
+    <dt>Taxable Expenses</dt><dd id="expenses_taxable">$0.00</dd>
+    <dt>Net</dt><dd id="net">$0.00</dd>
+  </dl>
+</div>
+<p>Marker: accounting.html build v2025-10-10-2</p>
 <script>
-async function fetchJSON(url){
-  const r = await fetch(url);
-  const t = await r.text();
-  try { return JSON.parse(t) } catch { return { ok:false, error:'Invalid JSON', raw:t } }
-}
-function num(x){ return Number(x||0).toFixed(2); }
-(async ()=>{
-  const data = await fetchJSON('/api/accounting');
-  const msg = document.getElementById('msg');
-  if (!data.ok){
-    msg.textContent = 'Error: ' + (data.error || 'invalid JSON');
-    console.error('Accounting raw:', data.raw);
-    return;
-  }
-  msg.textContent = '';
-  document.getElementById('p_tax').textContent = num(data.payments.taxable);
-  document.getElementById('p_ntax').textContent = num(data.payments.nonTaxable);
-  document.getElementById('p_all').textContent  = num(data.payments.total);
-
-  document.getElementById('e_tax').textContent = num(data.expenses.taxable);
-  document.getElementById('e_ntax').textContent = num(data.expenses.nonTaxable);
-  document.getElementById('e_all').textContent  = num(data.expenses.total);
-
-  document.getElementById('n_tax').textContent = num(data.net.taxable);
-  document.getElementById('n_ntax').textContent = num(data.net.nonTaxable);
-  document.getElementById('n_all').textContent  = num(data.net.total);
-})();
+async function loadSummary(){const s=await (await fetch('/api/summary')).json(); const f=n=>'$'+(+n).toFixed(2); income.textContent=f(s.total_income||0); income_taxable.textContent=f(s.taxable_income||0); expenses.textContent=f(s.total_expenses||0); expenses_taxable.textContent=f(s.taxable_expenses||0); net.textContent=f(s.net||0);}
+loadSummary();
 </script>
-</body>
-</html>
+</body></html>
+

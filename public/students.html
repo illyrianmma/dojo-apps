@@ -1,100 +1,120 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Students</title>
-  <style>
-    body{font-family:system-ui,Arial,sans-serif; margin:20px;}
-    .nav{margin-bottom:16px}
-    .nav a{text-decoration:none; padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#f7f7f7}
-    form input, form button{padding:8px; margin-right:8px}
-    table{border-collapse:collapse; width:100%; margin-top:16px}
-    th, td{border:1px solid #ddd; padding:8px; text-align:left}
-    tr.overdue td{background:#ffe5e5}
-    .small{font-size:.9em; color:#666}
-  </style>
-</head>
-<body>
-  <div class="nav"><a href="index.html">⬅ Back to Main</a></div>
-  <h1>Students</h1>
+﻿<!-- students.html build v2025-10-10-6 (adds renewal badges/colors) -->
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Students</title>
+  <link rel="stylesheet" href="styles.css?v=2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head><body>
+<h1>Students</h1>
+<p><a href="index.html">← Back to Main</a></p>
 
-  <form id="studentForm">
-    <input name="name" placeholder="Name" required>
-    <input name="phone" placeholder="Phone">
-    <input name="email" placeholder="Email">
-    <button type="submit">Add Student</button>
-    <span class="small">join date = today; renewal = +28 days automatically</span>
-  </form>
+<div id="err" class="error"></div>
 
-  <table id="tbl">
-    <thead>
-      <tr>
-        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th>
-        <th>Join</th><th>Renewal</th><th>Status</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<div class="toolbar">
+  <label>Show:
+    <select id="filter"><option value="1" selected>Active</option><option value="0">Old (Archived)</option><option value="all">All</option></select>
+  </label>
+  <button id="refreshBtn">Refresh</button>
+  <button id="oldBtn" title="Quick view old students">Old Students</button>
+</div>
+
+<h2>Add / Edit Student</h2>
+<form id="studentForm">
+  <input type="hidden" id="id" name="id" />
+  <div class="grid">
+    <input id="first_name" name="first_name" placeholder="First Name" required />
+    <input id="last_name"  name="last_name"  placeholder="Last Name"  required />
+    <input id="phone"      name="phone"      placeholder="Phone" />
+    <input id="email"      name="email"      placeholder="Email" />
+    <input id="address"    name="address"    placeholder="Address" />
+    <input id="age"        name="age"        type="number" placeholder="Age" />
+    <input id="program"    name="program"    placeholder="Program (e.g., BJJ)" />
+    <input id="start_date" name="start_date" type="date" />
+    <input id="renewal_date" name="renewal_date" type="date" />
+    <input id="parent_name" name="parent_name" placeholder="Parent (if underage)" />
+    <input id="notes"      name="notes"      placeholder="Notes" />
+    <button id="saveBtn" type="submit">Save</button>
+  </div>
+</form>
+
+<h2>Student List</h2>
+<table id="studentsTable"><thead>
+  <tr><th>Name</th><th>Phone</th><th>Program</th><th>Start</th><th>Renewal</th><th>Status</th><th>Actions</th></tr>
+</thead><tbody></tbody></table>
+
+<p class="muted">Marker: students.html build v2025-10-10-6</p>
 
 <script>
-async function fetchJSON(url, opts){
-  const r = await fetch(url, opts);
-  const txt = await r.text();
-  try { return JSON.parse(txt); }
-  catch { return { ok:false, error:'Invalid JSON', raw:txt }; }
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const err=$('#err');
+function showError(m){err.textContent=m||''; err.style.display=m?'block':'none';}
+function todayISO(){return new Date().toISOString().slice(0,10)}
+function plusDaysISO(iso,days){const d=new Date(iso||todayISO()); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10)}
+// Defaults
+$('#start_date').value=todayISO(); $('#renewal_date').value=plusDaysISO($('#start_date').value,28);
+$('#start_date').addEventListener('change',()=>{$('#renewal_date').value=plusDaysISO($('#start_date').value,28)})
+
+function daysBetween(a,b){return Math.floor((new Date(a)-new Date(b))/(1000*60*60*24))}
+function renewalBadge(renewalISO){
+  if(!renewalISO) return {html:'', row:''};
+  const d = daysBetween(renewalISO, todayISO()); // + = days until renewal in the future? careful:
+  const delta = Math.floor((new Date(renewalISO)-new Date(todayISO()))/(1000*60*60*24));
+  if (delta < 0) return { html:`<span class="badge danger">Overdue ${-delta}d</span>`, row:'overdue' };
+  if (delta <= 7) return { html:`<span class="badge warn">Due in ${delta}d</span>`, row:'due-soon' };
+  return { html:`<span class="badge ok">In ${delta}d</span>`, row:'' };
 }
-function isOverdue(yyyy_mm_dd){
-  if (!yyyy_mm_dd) return false;
-  const today = new Date().toISOString().slice(0,10);
-  return yyyy_mm_dd < today;
-}
-async function load(){
-  const data = await fetchJSON('/api/students');
-  const tb = document.querySelector('#tbl tbody');
-  tb.innerHTML = '';
-  if (!data.ok){
-    tb.innerHTML = `<tr><td colspan="8">Error loading: ${data.error||data.raw}</td></tr>`;
-    return;
-  }
-  for (const s of data.students){
-    const tr = document.createElement('tr');
-    if (isOverdue(s.renewal_date)) tr.classList.add('overdue');
-    tr.innerHTML = `
-      <td>${s.id}</td>
-      <td>${s.name||''}</td>
+
+async function api(url,opts={}){ try{ const r=await fetch(url,opts); if(!r.ok) throw new Error((await r.text())||r.statusText); const ct=r.headers.get('content-type')||''; return ct.includes('application/json')?r.json():r.text(); }catch(e){showError(e.message); throw e;} }
+
+async function fetchStudents(){
+  showError('');
+  const filter=$('#filter').value;
+  const data=await api('/api/students?active='+encodeURIComponent(filter));
+  const tbody=$('#studentsTable tbody'); tbody.innerHTML='';
+  for(const s of data){
+    const {html:renewBadge,row:rowCls}=renewalBadge(s.renewal_date);
+    const tr=document.createElement('tr');
+    if(rowCls) tr.classList.add(rowCls);
+    tr.innerHTML=`
+      <td>${(s.first_name||'')+' '+(s.last_name||'')}</td>
       <td>${s.phone||''}</td>
-      <td>${s.email||''}</td>
-      <td>${s.join_date||''}</td>
-      <td>${s.renewal_date||''}</td>
-      <td>${s.status||''}</td>
+      <td>${s.program||''}</td>
+      <td>${s.start_date||''}</td>
+      <td>${s.renewal_date||''} ${renewBadge}</td>
+      <td>${s.active?'Active':'Old'}</td>
       <td>
-        <button data-archive="${s.id}">Archive</button>
+        <button class="edit" data-id="${s.id}">Edit</button>
+        <button class="del" data-id="${s.id}">Delete</button>
+        ${s.active?`<button class="arch" data-id="${s.id}" data-active="0">Archive</button>`:`<button class="arch" data-id="${s.id}" data-active="1">Unarchive</button>`}
       </td>`;
-    tb.appendChild(tr);
+    tbody.appendChild(tr);
   }
+  $$('#studentsTable .edit').forEach(b=>b.onclick=()=>fillForm(b.dataset.id));
+  $$('#studentsTable .del').forEach(b=>b.onclick=()=>delStudent(b.dataset.id));
+  $$('#studentsTable .arch').forEach(b=>b.onclick=()=>toggleArchive(b.dataset.id,b.dataset.active));
 }
-document.getElementById('studentForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const fd = new FormData(e.target);
-  const body = Object.fromEntries(fd.entries());
-  const res = await fetchJSON('/api/students',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) { alert('Error: ' + res.error); return; }
-  e.target.reset();
-  load();
+
+async function fillForm(id){
+  showError('');
+  const list=await api('/api/students?active=all');
+  const s=list.find(x=>x.id==id); if(!s) return;
+  for(const k of ['id','first_name','last_name','phone','email','address','age','program','start_date','renewal_date','parent_name','notes']){
+    const el=document.getElementById(k); if(el) el.value=s[k]??'';
+  }
+  $('#saveBtn').textContent='Update'; window.scrollTo({top:0,behavior:'smooth'});
+}
+async function delStudent(id){ if(!confirm('Delete this student?')) return; await api('/api/students/'+id,{method:'DELETE'}); fetchStudents(); }
+async function toggleArchive(id,toActive){ await api('/api/students/'+id+'/archive?active='+toActive,{method:'PATCH'}); fetchStudents(); }
+
+$('#studentForm').addEventListener('submit',async(e)=>{
+  e.preventDefault(); showError('');
+  const payload=Object.fromEntries(new FormData(e.target).entries());
+  if(!payload.first_name && !payload.last_name){ showError('Please enter at least a first or last name.'); return; }
+  payload.age=payload.age?Number(payload.age):null;
+  const isUpdate=!!payload.id; const url=isUpdate?('/api/students/'+payload.id):'/api/students'; const method=isUpdate?'PUT':'POST';
+  await api(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  e.target.reset(); $('#saveBtn').textContent='Save'; $('#start_date').value=todayISO(); $('#renewal_date').value=plusDaysISO($('#start_date').value,28);
+  fetchStudents();
 });
-document.querySelector('#tbl').addEventListener('click', async (e)=>{
-  const id = e.target?.dataset?.archive;
-  if (!id) return;
-  if (!confirm('Archive this student?')) return;
-  const res = await fetchJSON(`/api/students/${id}/archive`, { method:'POST' });
-  if (!res.ok) { alert('Error: ' + res.error); return; }
-  load();
-});
-load();
+$('#filter').onchange=fetchStudents; $('#refreshBtn').onclick=fetchStudents; $('#oldBtn').onclick=()=>{ $('#filter').value='0'; fetchStudents(); };
+fetchStudents();
 </script>
-</body>
-</html>
+</body></html>
