@@ -1,16 +1,20 @@
 ﻿services:
-- type: web
-  name: dojo-apps
-  env: node
-  plan: free
-  buildCommand: npm install
-  startCommand: node server.js
-  envVars:
-  - key: DB_FILE
-    value: /data/dojo.db
-  - key: ADMIN_TOKEN
-    sync: false   # you will fill this in the Render dashboard
-  disk:
-    name: dojo-data
-    mountPath: /data
-    sizeGB: 1
+  - type: web
+    name: dojo-apps
+    runtime: node
+    plan: free
+    region: oregon     # change to your preference later (ohio/frankfurt/etc.)
+    repo: https://github.com/illyrianmma/dojo-apps
+    branch: main
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DOJO_DB
+        value: /var/data/dojo.db
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
