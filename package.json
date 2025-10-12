@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "dojo-apps",
   "version": "1.0.0",
   "description": "Martial arts school manager",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "express": "4.19.2",
+    "multer": "^2.0.2",
     "sqlite3": "5.1.7"
   }
 }

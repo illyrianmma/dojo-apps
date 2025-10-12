@@ -1,29 +1,185 @@
-﻿<!-- payments.html build v2025-10-10-2 -->
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Payments</title>
-  <link rel="stylesheet" href="styles.css?v=1" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payments</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; }
+    table { border-collapse: collapse; width: 100%; margin-top:.5rem; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+    input, select, button { margin: 2px; }
+    .row { margin: .25rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Payments</h1>
 
-</head><body>
-<h1>Payments</h1><p><a href="index.html">← Back to Main</a></p>
-<h2>Add Payment</h2>
-<div class="row">
-  <select id="student"></select>
-  <input id="amount" type="number" step="0.01" placeholder="Amount" />
-  <select id="method"><option>cash</option><option>e-transfer</option><option>card</option><option>other</option></select>
-  <label><input id="taxable" type="checkbox" /> Taxable</label>
-  <input id="date" type="date" />
-  <input id="notes" placeholder="Notes" />
-  <button id="addBtn">Add Payment</button>
-</div>
-<h2>Payments List</h2>
-<table id="payTable"><thead><tr><th>Date</th><th>Student</th><th>Amount</th><th>Method</th><th>Taxable</th><th>Notes</th><th>Actions</th></tr></thead><tbody></tbody></table>
-<p>Marker: payments.html build v2025-10-10-2</p>
-<script>
-const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
-document.getElementById('date').value=new Date().toISOString().slice(0,10);
-async function loadStudents(){const d=await (await fetch('/api/students?active=1')).json(); $('#student').innerHTML=d.map(s=>`<option value="${s.id}">${s.first_name||''} ${s.last_name||''}</option>`).join('')}
-async function loadPayments(){const arr=await (await fetch('/api/payments')).json(); const tbody=$('#payTable tbody'); tbody.innerHTML=''; for(const p of arr){const tr=document.createElement('tr'); tr.innerHTML=`<td>${p.date||''}</td><td>${(p.first_name||'')+' '+(p.last_name||'')}</td><td>${(+p.amount).toFixed(2)}</td><td>${p.method||''}</td><td>${p.taxable?'Yes':'No'}</td><td>${p.notes||''}</td><td><button data-id="${p.id}" class="del">Delete</button></td>`; tbody.appendChild(tr)} $$('#payTable .del').forEach(b=>b.onclick=async()=>{await fetch('/api/payments/'+b.dataset.id,{method:'DELETE'}); loadPayments();})}
-$('#addBtn').onclick=async()=>{const p={student_id:$('#student').value,amount:$('#amount').value,method:$('#method').value,taxable:$('#taxable').checked,date:$('#date').value,notes:$('#notes').value}; await fetch('/api/payments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}); $('#amount').value=''; $('#notes').value=''; loadPayments();}
-loadStudents(); loadPayments();
-</script>
-</body></html>
+  <h2>Add Payment</h2>
+  <div class="row">
+    <label>Student:
+      <!-- NEW: Add Payment uses Name dropdown -->
+      <select id="addStudentName" style="min-width:14rem">
+        <option value="">(Select student)</option>
+      </select>
+    </label>
+    <label>Amount: <input type="number" id="amount" min="0" step="0.01" style="width:7rem"></label>
+    <label>Date: <input type="date" id="date"></label>
+    <label>Taxable:
+      <select id="taxable">
+        <option value="1">Taxable</option>
+        <option value="0">Non-Taxable</option>
+      </select>
+    </label>
+    <label>Method:
+      <input type="text" id="method" placeholder="cash, card, etc." style="width:10rem">
+    </label>
+    <button id="addBtn">Add Payment</button>
+  </div>
 
+  <h2>Payments List</h2>
+  <div class="row">
+    <!-- Name dropdown filter -->
+    <label>Filter by Name:
+      <select id="filterStudentName" style="min-width:14rem">
+        <option value="">All students</option>
+      </select>
+    </label>
+    <button id="filterBtn">Apply</button>
+    <button id="clearFilterBtn">Clear</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Amount</th><th>Date</th><th>Taxable</th><th>Method</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="payBody"></tbody>
+  </table>
+
+  <p><a href="index.html">Back to Main Page</a></p>
+
+  <script>
+    let students = [];
+    const idToName = new Map();
+
+    // Load students and populate BOTH dropdowns
+    async function loadStudents() {
+      const res = await fetch('/api/students');
+      students = await res.json();
+
+      students.sort((a,b) =>
+        (a.last_name||'').localeCompare(b.last_name||'') ||
+        (a.first_name||'').localeCompare(b.first_name||'')
+      );
+
+      const addSel = document.getElementById('addStudentName');
+      const filterSel = document.getElementById('filterStudentName');
+
+      addSel.innerHTML = '<option value="">(Select student)</option>';
+      filterSel.innerHTML = '<option value="">All students</option>';
+      idToName.clear();
+
+      students.forEach(s => {
+        const full = (s.first_name||'') + ' ' + (s.last_name||'');
+        idToName.set(s.id, full);
+
+        const opt1 = document.createElement('option');
+        opt1.value = String(s.id);
+        opt1.textContent = full;
+        addSel.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = String(s.id);
+        opt2.textContent = full;
+        filterSel.appendChild(opt2);
+      });
+    }
+
+    async function loadPayments(studentId) {
+      const qs = studentId ? ('?student_id=' + encodeURIComponent(studentId)) : '';
+      const res = await fetch('/api/payments' + qs);
+      const list = await res.json();
+      const tbody = document.getElementById('payBody');
+      tbody.innerHTML = '';
+      (list || []).forEach(p => {
+        const tr = document.createElement('tr');
+        const name = p.student_id ? (idToName.get(p.student_id) || ('ID ' + p.student_id)) : '';
+        tr.innerHTML = `
+          <td>${p.id}</td>
+          <td>${name}</td>
+          <td>$${Number(p.amount||0).toFixed(2)}</td>
+          <td>${p.date || ''}</td>
+          <td>${Number(p.taxable) ? 'Yes' : 'No'}</td>
+          <td>${p.method || ''}</td>
+          <td><button class="del" data-id="${p.id}">Delete</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Add payment: use selected student id
+    document.getElementById('addBtn').addEventListener('click', async () => {
+      const student_id = document.getElementById('addStudentName').value || null;
+      const amount = document.getElementById('amount').value;
+      const date = document.getElementById('date').value;
+      const taxable = document.getElementById('taxable').value === '1';
+      const method = document.getElementById('method').value.trim() || null;
+
+      if (!student_id) { alert('Please select a student'); return; }
+      if (!amount || !date) { alert('Amount and Date are required'); return; }
+
+      const r = await fetch('/api/payments', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ student_id, amount, date, taxable, method })
+      });
+      if (r.ok) {
+        const sel = document.getElementById('filterStudentName');
+        const selectedId = sel.value || null;
+        await loadPayments(selectedId);
+        // optional: clear amount/date/method
+        // document.getElementById('amount').value = '';
+        // document.getElementById('date').value = '';
+        // document.getElementById('method').value = '';
+      } else {
+        alert('Error adding payment');
+      }
+    });
+
+    // Delete payment
+    document.addEventListener('click', async (e) => {
+      if (e.target.matches('.del')) {
+        const id = e.target.getAttribute('data-id');
+        if (!confirm('Delete this payment?')) return;
+        const r = await fetch('/api/payments/' + id, { method:'DELETE' });
+        if (r.ok) {
+          const sel = document.getElementById('filterStudentName');
+          const selectedId = sel.value || null;
+          await loadPayments(selectedId);
+        } else {
+          alert('Error deleting');
+        }
+      }
+    });
+
+    // Filters
+    document.getElementById('filterBtn').addEventListener('click', () => {
+      const sel = document.getElementById('filterStudentName');
+      loadPayments(sel.value || null);
+    });
+    document.getElementById('clearFilterBtn').addEventListener('click', () => {
+      const sel = document.getElementById('filterStudentName');
+      sel.value = '';
+      loadPayments(null);
+    });
+
+    // Init
+    (async function init() {
+      await loadStudents();
+      await loadPayments(null);
+    })();
+  </script>
+</body>
+</html>
