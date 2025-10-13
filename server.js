@@ -12,22 +12,23 @@ const DB_PATH = process.env.DOJO_DB || path.join(__dirname, 'dojo.db');
 console.log('[dojo] DB =', DB_PATH);
 const db = new sqlite3.Database(DB_PATH);
 
-// Middleware
+// JSON body
 app.use(express.json());
 
-// Attach db to req (so routes can use req.db consistently)
-app.use((req, _res, next) => {
-  req.db = db;
-  next();
-});
+// Attach db to req
+app.use((req, _res, next) => { req.db = db; next(); });
 
-// Ensure public/uploads exists
-const uploadsAbs = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadsAbs)) {
-  fs.mkdirSync(uploadsAbs, { recursive: true });
-}
+// ---- Uploads (persistent if env set) ----
+const UPLOADS_DIR = process.env.UPLOADS_DIR
+  ? process.env.UPLOADS_DIR
+  : path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+console.log('[dojo] UPLOADS_DIR =', UPLOADS_DIR);
 
-// ---- Schema (create tables if not exist) ----
+// Serve uploads under /uploads even if folder is outside /public
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// ---- Schema ----
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS students (
@@ -44,7 +45,6 @@ db.serialize(() => {
       photo      TEXT
     )
   `);
-
   db.run(`
     CREATE TABLE IF NOT EXISTS attendance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +54,6 @@ db.serialize(() => {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
     )
   `);
-
   db.run(`
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +65,6 @@ db.serialize(() => {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
     )
   `);
-
   db.run(`
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,48 +93,47 @@ function ensureColumn(table, name, type) {
 }
 
 db.serialize(() => {
-  // Keep parity with previous logs
   ensureColumn('students', 'phone', 'TEXT');
   ensureColumn('attendance', 'student_id', 'INTEGER');
   ensureColumn('payments', 'student_id', 'INTEGER');
   ensureColumn('expenses', 'vendor', 'TEXT');
-  ensureColumn('leads', 'name', 'TEXT');           // harmless if no leads table
+  ensureColumn('leads', 'name', 'TEXT');
   ensureColumn('students', 'email', 'TEXT');
   ensureColumn('payments', 'amount', 'REAL');
   ensureColumn('attendance', 'date', 'TEXT');
-  ensureColumn('leads', 'phone', 'TEXT');          // harmless if no leads table
+  ensureColumn('leads', 'phone', 'TEXT');
   ensureColumn('expenses', 'amount', 'REAL');
   ensureColumn('students', 'address', 'TEXT');
   ensureColumn('payments', 'method', 'TEXT');
   ensureColumn('attendance', 'present', 'INTEGER');
-  ensureColumn('leads', 'email', 'TEXT');          // harmless if no leads table
+  ensureColumn('leads', 'email', 'TEXT');
   ensureColumn('expenses', 'taxable', 'INTEGER');
   ensureColumn('students', 'age', 'INTEGER');
   ensureColumn('payments', 'taxable', 'INTEGER');
-  ensureColumn('leads', 'interested_program', 'TEXT'); // harmless if no leads table
+  ensureColumn('leads', 'interested_program', 'TEXT');
   ensureColumn('expenses', 'date', 'TEXT');
-
-  // Ensure photos
   ensureColumn('students', 'photo', 'TEXT');
 });
 
 // ---- Routes ----
-const studentsRoutes = require('./routes/students');
+const studentsRoutes   = require('./routes/students');
 const attendanceRoutes = require('./routes/attendance');
-const paymentsRoutes = require('./routes/payments');
-const expensesRoutes = require('./routes/expenses');
-const uploadsRoutes = require('./routes/uploads');\nconst adminRoutes = require('./routes/admin'); // NEW
+const paymentsRoutes   = require('./routes/payments');
+const expensesRoutes   = require('./routes/expenses');
+const uploadsRoutes    = require('./routes/uploads');
+const adminRoutes      = require('./routes/admin');
 
 app.use('/api/students', studentsRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/expenses', expensesRoutes);
-app.use('/api/uploads', uploadsRoutes);\napp.use('/api/admin', adminRoutes); // NEW
+app.use('/api/uploads', uploadsRoutes);
+app.use('/api/admin', adminRoutes);
 
-// ---- Static ----
+// Static
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---- Start ----
+// Start
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
