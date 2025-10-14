@@ -109,15 +109,21 @@ const studentsRoutes   = require('./routes/students');
 const attendanceRoutes = require('./routes/attendance');
 const paymentsRoutes   = require('./routes/payments');
 const expensesRoutes   = require('./routes/expenses');
-const uploadsRoutes    = require('./routes/uploads');
-const adminRoutes      = require('./routes/admin');   // << mounted below
+const uploadsRoutes = require('./routes/uploads');
+const leadsRoutes = require('./routes/leads');
+const adminRoutes = require('./routes/admin');
+const legacyRoutes = require('./routes/legacy');
+// << mounted below
 
 app.use('/api/students', studentsRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/expenses', expensesRoutes);
 app.use('/api/uploads', uploadsRoutes);
-app.use('/api/admin', adminRoutes);                   // << here
+app.use('/api/leads', leadsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/legacy', legacyRoutes);
+// << here
 
 // static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -126,3 +132,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
+
+
+

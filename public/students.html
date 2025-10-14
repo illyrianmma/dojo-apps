@@ -1,314 +1,169 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Students</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; }
-    h1, h2 { margin: .3rem 0; }
-    table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; vertical-align: middle; }
-    input, select, button { margin: 2px; }
-    .actions button { margin-right: .25rem; }
-    .hint { color:#555; font-size:.9em; }
+    body{font-family:sans-serif;max-width:1000px;margin:2rem auto}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #ccc;padding:6px}
+    input,select,button{margin:2px}
+    img.thumb{height:36px;width:36px;object-fit:cover;border-radius:4px;border:1px solid #ddd}
+    .actions a, .actions button{margin-right:.3rem}
+    tr.highlight td{background:#dff3ff;}
+    a.btn{display:inline-block;padding:.25rem .5rem;border:1px solid #aaa;border-radius:4px;text-decoration:none;color:#000;margin:0 .2rem}
   </style>
 </head>
 <body>
   <h1>Students</h1>
+  <p>
+    <a class="btn" href="students_legacy.html">Open Old Students Page</a>
+    <a class="btn" href="index.html">Back to Main Page</a>
+  </p>
 
   <h2>Add Student</h2>
-  <form id="studentForm">
-    <input type="text" id="first_name" placeholder="First Name" required>
-    <input type="text" id="last_name" placeholder="Last Name" required>
-    <input type="text" id="phone" placeholder="Phone">
-    <input type="text" id="program" placeholder="Program">
-    <input type="date" id="start_date" placeholder="Start">
-    <input type="date" id="renewal_date" placeholder="Renewal">
-    <input type="email" id="email" placeholder="Email">
-    <input type="text" id="address" placeholder="Address">
-    <input type="number" id="age" placeholder="Age" min="0" style="width:6rem">
-    <!-- URL or local file -->
-    <input type="url" id="photo" placeholder="Photo URL (optional)">
-    <input type="file" id="photoFile" accept="image/*">
-    <div class="hint">You can paste a Photo URL or choose a file. If a file is chosen, it will be uploaded automatically.</div>
-    <button type="submit">Add</button>
-  </form>
+  <div>
+    <label>First Name <input id="first_name" required></label>
+    <label>Last Name <input id="last_name" required></label>
+    <label>Phone <input id="phone"></label>
+    <label>Program <input id="program"></label>
+    <label>Join Date <input type="date" id="start_date"></label>
+    <label>Renewal <input type="date" id="renewal_date"></label>
+    <label>Email <input id="email"></label>
+    <label>Address <input id="address"></label>
+    <label>Age <input id="age" type="number" min="0" style="width:5rem"></label>
+    <label>Photo URL (optional) <input id="photo_url"></label>
+    <label>Upload Photo <input id="photo_file" type="file" accept="image/*"></label>
+    <button id="addBtn">Add</button>
+  </div>
 
   <h2>Student List</h2>
   <table>
     <thead>
-      <tr>
-        <th>Name</th>
-        <th>Phone</th>
-        <th>Program</th>
-        <th>Start</th>
-        <th>Renewal</th>
-        <th class="actions">Actions</th>
-      </tr>
+      <tr><th>Pic</th><th>Name</th><th>Phone</th><th>Program</th><th>Start</th><th>Renewal</th><th>Actions</th></tr>
     </thead>
-    <tbody id="studentsBody"></tbody>
+    <tbody id="tbody"></tbody>
   </table>
 
-  <p><a href="index.html">Back to Main Page</a></p>
-
   <script>
-    const tbody = document.getElementById('studentsBody');
+    const fmt = d => d.toISOString().slice(0,10);
 
-    function normalizePhotoUrl(url) {
-      if (!url) return '';
-      // Trim spaces
-      url = String(url).trim();
-      // If it looks like a Windows fake path from file inputs, ignore (we upload files separately)
-      if (/^C:\\\\fakepath\\\\/i.test(url)) return '';
-      // If it is relative without leading slash, make it absolute from site root
-      if (!/^https?:\/\//i.test(url) && !url.startsWith('/')) {
-        return '/' + url.replace(/^\/+/, '');
-      }
-      return url;
-    }
-
-    function imgSmall(url) {
-      const src = normalizePhotoUrl(url);
-      if (!src) return '';
-      // Add onerror to hide broken images
-      return `<img src="${src}" alt="" onerror="this.style.display='none'" style="width:32px;height:32px;object-fit:cover;vertical-align:middle;margin-right:6px;border-radius:4px;">`;
-    }
-
-    // Prefill dates: start = today, renewal = +28 days
-    (function prefillDates() {
-      const sd = document.getElementById('start_date');
-      const rd = document.getElementById('renewal_date');
-      const today = new Date();
-      const y = today.getFullYear();
-      const m = String(today.getMonth() + 1).padStart(2, '0');
-      const d = String(today.getDate()).padStart(2, '0');
-      const startStr = `${y}-${m}-${d}`;
-      const renew = new Date(today);
-      renew.setDate(renew.getDate() + 28);
-      const ry = renew.getFullYear();
-      const rm = String(renew.getMonth() + 1).padStart(2, '0');
-      const rdStr = String(renew.getDate()).padStart(2, '0');
-      const renewStr = `${ry}-${rm}-${rdStr}`;
-      sd.value = startStr;
-      rd.value = renewStr;
+    (function(){
+      const u = new URL(location.href);
+      const m = k => u.searchParams.get(k);
+      const map = { first_name:'first_name', last_name:'last_name', phone:'phone', email:'email', program:'program' };
+      for (const [q,id] of Object.entries(map)) { const v=m(q); if(v) document.getElementById(id).value=v; }
     })();
 
-    async function loadStudents() {
-      const res = await fetch('/api/students');
-      const list = await res.json();
-      tbody.innerHTML = '';
+    (function(){
+      const s = document.getElementById('start_date');
+      const r = document.getElementById('renewal_date');
+      const t = new Date();
+      if(!s.value) s.value = fmt(t);
+      if(!r.value){ const d = new Date(t); d.setDate(d.getDate()+28); r.value = fmt(d); }
+    })();
 
-      list.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${imgSmall(s.photo)}${s.first_name} ${s.last_name}</td>
-          <td>${s.phone || ''}</td>
-          <td>${s.program || ''}</td>
-          <td>${s.start_date || ''}</td>
-          <td>${s.renewal_date || ''}</td>
-          <td class="actions">
-            <button class="edit-btn" data-id="${s.id}">Edit</button>
-            <button class="delete-btn" data-id="${s.id}">Delete</button>
-            <button class="view-payments-btn" data-id="${s.id}">View Payments</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
+    function rowHTML(s){
+      const full = (s.first_name||'')+' '+(s.last_name||'');
+      const pic  = s.photo ? `<img class="thumb" src="${s.photo}" alt="pic">` : '';
+      const oldLink = `students_legacy.html?id=${encodeURIComponent(s.id)}`;
+      const payLink = `payments_student.html?student_id=${encodeURIComponent(s.id)}`;
+      return `
+        <td>${pic}</td>
+        <td>${full}</td>
+        <td>${s.phone||''}</td>
+        <td>${s.program||''}</td>
+        <td>${s.start_date||''}</td>
+        <td>${s.renewal_date||''}</td>
+        <td class="actions">
+          <a href="${oldLink}">Old View</a>
+          <button class="to-old" data-id="${s.id}">Move to Old</button>
+          <a href="${payLink}">View Payments</a>
+          <button class="del" data-id="${s.id}">Delete</button>
+        </td>
+      `;
+    }
 
-        // Hidden details row for payments-by-month
-        const detailsTr = document.createElement('tr');
-        detailsTr.className = 'student-payments-row';
-        detailsTr.style.display = 'none';
-        const currentYear = new Date().getFullYear();
-        detailsTr.innerHTML = `
-          <td colspan="6">
-            <div>
-              <label>Year:
-                <input type="number" class="year-input" value="${currentYear}" min="2000" max="2100" style="width: 6rem;">
-              </label>
-              <button class="load-student-payments" data-id="${s.id}">Load</button>
-            </div>
-            <div class="payments-result" id="payments-${s.id}" style="margin-top:.5rem;"></div>
-          </td>
-        `;
-        tbody.appendChild(detailsTr);
+    async function load(){
+      // IMPORTANT: only show active students
+      const r = await fetch('/api/students?legacy=false');
+      if (!r.ok) { alert('Loading students failed: '+(await r.text())); return; }
+      const rows = await r.json();
+      const tb = document.getElementById('tbody'); tb.innerHTML='';
+      (rows||[]).forEach(s=>{
+        const tr = document.createElement('tr'); tr.dataset.id = String(s.id);
+        tr.innerHTML = rowHTML(s);
+        tb.appendChild(tr);
       });
     }
 
-    // Upload file helper: returns URL string
-    async function uploadPhotoFile(file) {
-      const fd = new FormData();
-      fd.append('image', file);
-      const resp = await fetch('/api/uploads/image', {
-        method: 'POST',
-        body: fd
-      });
-      if (!resp.ok) {
-        const msg = await resp.text();
-        throw new Error(msg || 'Upload failed');
-      }
-      const data = await resp.json();
-      return data.url; // e.g. /uploads/12345_name.png
+    async function uploadPhotoIfAny() {
+      const f = document.getElementById('photo_file').files[0];
+      if (!f) return null;
+      const fd = new FormData(); fd.append('image', f);
+      const r = await fetch('/api/uploads/image', { method:'POST', body: fd });
+      if (!r.ok) { const t=await r.text(); alert('Photo upload failed: '+t); return null; }
+      const j = await r.json(); return j.url || null;
     }
 
-    // Add student
-    document.getElementById('studentForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    async function addStudent(){
+      const first_name = document.getElementById('first_name').value.trim();
+      const last_name  = document.getElementById('last_name').value.trim();
+      if (!first_name || !last_name) { alert('First and Last name required'); return; }
+      const s = document.getElementById('start_date');
+      const r = document.getElementById('renewal_date');
+      if(!s.value){ const t=new Date(); s.value = fmt(t); }
+      if(!r.value){ const t=new Date(); t.setDate(t.getDate()+28); r.value = fmt(t); }
 
-      let photoUrl = (document.getElementById('photo').value || '').trim();
-      const fileEl = document.getElementById('photoFile');
-      const file = fileEl.files && fileEl.files[0];
-
-      try {
-        // If a local file is chosen, upload it first, then use returned URL
-        if (file) {
-          const uploaded = await uploadPhotoFile(file);
-          photoUrl = uploaded; // relative path served from /public/uploads
-        }
-
-        // If dates are empty for any reason, ensure defaults here too
-        const sdEl = document.getElementById('start_date');
-        const rdEl = document.getElementById('renewal_date');
-        if (!sdEl.value) {
-          const today = new Date();
-          sdEl.value = today.toISOString().slice(0,10);
-        }
-        if (!rdEl.value) {
-          const base = new Date(sdEl.value);
-          base.setDate(base.getDate() + 28);
-          rdEl.value = base.toISOString().slice(0,10);
-        }
-
-        const payload = {
-          first_name: document.getElementById('first_name').value.trim(),
-          last_name: document.getElementById('last_name').value.trim(),
-          phone: document.getElementById('phone').value.trim() || null,
-          program: document.getElementById('program').value.trim() || null,
-          start_date: sdEl.value || null,
-          renewal_date: rdEl.value || null,
-          email: document.getElementById('email').value.trim() || null,
-          address: document.getElementById('address').value.trim() || null,
-          age: document.getElementById('age').value || null,
-          photo: normalizePhotoUrl(photoUrl) || null
-        };
-
-        const r = await fetch('/api/students', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!r.ok) {
-          const t = await r.text();
-          throw new Error(t || 'Error adding student');
-        }
-
-        e.target.reset();
-        // Refill dates after reset
-        (function rePrefill() {
-          const sd = document.getElementById('start_date');
-          const rd = document.getElementById('renewal_date');
-          const today = new Date();
-          const y = today.getFullYear();
-          const m = String(today.getMonth() + 1).padStart(2, '0');
-          const d = String(today.getDate()).padStart(2, '0');
-          const startStr = `${y}-${m}-${d}`;
-          const renew = new Date(today);
-          renew.setDate(renew.getDate() + 28);
-          const ry = renew.getFullYear();
-          const rm = String(renew.getMonth() + 1).padStart(2, '0');
-          const rdStr = String(renew.getDate()).padStart(2, '0');
-          const renewStr = `${ry}-${rm}-${rdStr}`;
-          sd.value = startStr;
-          rd.value = renewStr;
-        })();
-
-        loadStudents();
-      } catch (err) {
-        alert('Error: ' + err.message);
-      }
-    });
-
-    // Delegated actions (edit/delete/toggle payments/load payments)
-    document.addEventListener('click', async (e) => {
-      if (e.target.matches('.view-payments-btn')) {
-        const row = e.target.closest('tr');
-        const detailsRow = row.nextElementSibling;
-        detailsRow.style.display = detailsRow.style.display === 'none' ? '' : 'none';
-        return;
+      let photo = await uploadPhotoIfAny();
+      if (!photo) {
+        const url = document.getElementById('photo_url').value.trim();
+        if (url) photo = url;
       }
 
-      if (e.target.matches('.load-student-payments')) {
-        const id = e.target.getAttribute('data-id');
-        const detailsRow = e.target.closest('tr');
-        const yearInput = detailsRow.querySelector('.year-input');
-        const box = detailsRow.querySelector(`#payments-${id}`);
-        const year = (yearInput && yearInput.value) ? yearInput.value : '';
+      const payload = {
+        first_name, last_name,
+        phone:   document.getElementById('phone').value.trim() || null,
+        program: document.getElementById('program').value.trim() || null,
+        start_date:   document.getElementById('start_date').value || null,
+        renewal_date: document.getElementById('renewal_date').value || null,
+        email:   document.getElementById('email').value.trim() || null,
+        address: document.getElementById('address').value.trim() || null,
+        age:     Number(document.getElementById('age').value || 0) || null,
+        photo:   photo || null,
+        is_legacy: false
+      };
 
-        box.textContent = 'Loading...';
-        const url = year
-          ? `/api/payments/by-student/${id}/monthly?year=${encodeURIComponent(year)}`
-          : `/api/payments/by-student/${id}/monthly`;
-        const r = await fetch(url);
-        const data = await r.json();
+      const rPost = await fetch('/api/students', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      if (!rPost.ok) { alert('Error adding student: ' + (await rPost.text())); return; }
+      await load();
+      document.getElementById('first_name').value = '';
+      document.getElementById('last_name').value  = '';
+      document.getElementById('photo_file').value = '';
+      document.getElementById('photo_url').value  = '';
+    }
 
-        const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const map = new Map();
-        (data.rows || []).forEach(row => {
-          const key = `${row.y}-${row.m}`;
-          map.set(key, Number(row.total || 0));
-        });
-
-        const y = year || String(new Date().getFullYear());
-        let html = `<table><tr>${monthNames.map(m => `<th>${m}</th>`).join('')}</tr><tr>`;
-        for (let i = 1; i <= 12; i++) {
-          const mm = String(i).padStart(2, '0');
-          const key = `${y}-${mm}`;
-          const amt = (map.get(key) || 0).toFixed(2);
-          html += `<td>$${amt}</td>`;
-        }
-        html += `</tr></table>`;
-        box.innerHTML = html;
-        return;
-      }
-
-      if (e.target.matches('.delete-btn')) {
-        const id = e.target.getAttribute('data-id');
+    document.addEventListener('click', async (e)=>{
+      if (e.target.matches('.del')) {
+        const id = e.target.dataset.id;
         if (!confirm('Delete this student?')) return;
-        const r = await fetch(`/api/students/${id}`, { method: 'DELETE' });
-        if (r.ok) loadStudents(); else alert('Error deleting');
-        return;
+        const r = await fetch('/api/students/'+encodeURIComponent(id), { method:'DELETE' });
+        if (!r.ok) { alert('Error deleting: ' + (await r.text())); return; }
+        await load();
       }
-
-      if (e.target.matches('.edit-btn')) {
-        const id = e.target.getAttribute('data-id');
-        const res = await fetch(`/api/students/${id}`);
-        const s = await res.json();
-        const first_name = prompt('First Name:', s.first_name); if (first_name === null) return;
-        const last_name  = prompt('Last Name:',  s.last_name);  if (last_name === null) return;
-        const phone      = prompt('Phone:',      s.phone || '');
-        const program    = prompt('Program:',    s.program || '');
-        const start_date = prompt('Start (YYYY-MM-DD):', s.start_date || '');
-        const renewal_date = prompt('Renewal (YYYY-MM-DD):', s.renewal_date || '');
-        const email      = prompt('Email:',      s.email || '');
-        const address    = prompt('Address:',    s.address || '');
-        const age        = prompt('Age:',        s.age ?? '');
-        const photo      = prompt('Photo URL (or /uploads/..):',  s.photo || '');
-
-        const payload = {
-          first_name, last_name, phone, program, start_date, renewal_date,
-          email, address, age, photo: normalizePhotoUrl(photo)
-        };
-        const up = await fetch(`/api/students/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+      if (e.target.matches('.to-old')) {
+        const id = e.target.dataset.id;
+        if (!confirm('Move this student to the Old Students page?')) return;
+        const r = await fetch('/api/students/'+encodeURIComponent(id)+'/legacy', {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ is_legacy: true })
         });
-        if (up.ok) loadStudents(); else alert('Error updating');
-        return;
+        if (!r.ok) { alert('Error moving to old: ' + (await r.text())); return; }
+        await load(); // reload now shows only active => row disappears
       }
     });
 
-    loadStudents();
+    document.getElementById('addBtn').addEventListener('click', addStudent);
+    load();
   </script>
 </body>
 </html>

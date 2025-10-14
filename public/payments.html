@@ -1,184 +1,178 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Payments</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; }
-    table { border-collapse: collapse; width: 100%; margin-top:.5rem; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-    input, select, button { margin: 2px; }
-    .row { margin: .25rem 0; }
+    body{font-family:sans-serif;max-width:1000px;margin:2rem auto}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #ccc;padding:6px;text-align:left}
+    input,select,button{margin:2px}
+    .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:.5rem 0}
+    .card{border:1px solid #ccc;border-radius:6px;padding:.5rem}
+    .muted{color:#666}
+    .row-actions button{margin-right:.3rem}
   </style>
 </head>
 <body>
   <h1>Payments</h1>
 
+  <div id="context" class="muted"></div>
+
   <h2>Add Payment</h2>
-  <div class="row">
+  <div>
     <label>Student:
-      <!-- NEW: Add Payment uses Name dropdown -->
-      <select id="addStudentName" style="min-width:14rem">
-        <option value="">(Select student)</option>
-      </select>
+      <select id="addStudentName" style="min-width:14rem"><option value="">(Select student)</option></select>
     </label>
-    <label>Amount: <input type="number" id="amount" min="0" step="0.01" style="width:7rem"></label>
-    <label>Date: <input type="date" id="date"></label>
+    <label>Amount: <input id="amount" type="number" min="0" step="0.01" style="width:7rem"></label>
+    <label>Date:   <input id="date" type="date"></label>
     <label>Taxable:
-      <select id="taxable">
-        <option value="1">Taxable</option>
-        <option value="0">Non-Taxable</option>
-      </select>
+      <select id="taxable"><option value="1">Taxable</option><option value="0">Non-Taxable</option></select>
     </label>
     <label>Method:
-      <input type="text" id="method" placeholder="cash, card, etc." style="width:10rem">
+      <select id="method">
+        <option value="cash">cash</option>
+        <option value="e-transfer">e-transfer</option>
+        <option value="check">check</option>
+        <option value="debit">debit</option>
+        <option value="credit card">credit card</option>
+      </select>
     </label>
     <button id="addBtn">Add Payment</button>
   </div>
 
-  <h2>Payments List</h2>
-  <div class="row">
-    <!-- Name dropdown filter -->
-    <label>Filter by Name:
-      <select id="filterStudentName" style="min-width:14rem">
-        <option value="">All students</option>
-      </select>
-    </label>
+  <h2>Filter by Name</h2>
+  <div>
+    <select id="filterStudentName" style="min-width:14rem"><option value="">All students</option></select>
     <button id="filterBtn">Apply</button>
     <button id="clearFilterBtn">Clear</button>
   </div>
 
+  <div id="studentMonthly" style="display:none">
+    <h2 id="studentMonthlyTitle">Monthly Totals</h2>
+    <div>
+      <button id="prevYear">◀</button>
+      <span id="yearLabel"></span>
+      <button id="nextYear">▶</button>
+    </div>
+    <div class="grid" id="monthsGrid"></div>
+  </div>
+
+  <h2 id="listTitle">Payments List</h2>
   <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Name</th><th>Amount</th><th>Date</th><th>Taxable</th><th>Method</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="payBody"></tbody>
+    <thead><tr><th>ID</th><th>Name</th><th>Amount</th><th>Date</th><th>Taxable</th><th>Method</th><th>Actions</th></tr></thead>
+    <tbody id="body"></tbody>
   </table>
 
   <p><a href="index.html">Back to Main Page</a></p>
 
   <script>
-    let students = [];
-    const idToName = new Map();
+    let students=[]; const idToName=new Map();
+    const monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    // Load students and populate BOTH dropdowns
-    async function loadStudents() {
-      const res = await fetch('/api/students');
-      students = await res.json();
+    function qs(name){ return new URL(location.href).searchParams.get(name); }
 
-      students.sort((a,b) =>
-        (a.last_name||'').localeCompare(b.last_name||'') ||
-        (a.first_name||'').localeCompare(b.first_name||'')
-      );
-
-      const addSel = document.getElementById('addStudentName');
-      const filterSel = document.getElementById('filterStudentName');
-
-      addSel.innerHTML = '<option value="">(Select student)</option>';
-      filterSel.innerHTML = '<option value="">All students</option>';
-      idToName.clear();
-
-      students.forEach(s => {
-        const full = (s.first_name||'') + ' ' + (s.last_name||'');
-        idToName.set(s.id, full);
-
-        const opt1 = document.createElement('option');
-        opt1.value = String(s.id);
-        opt1.textContent = full;
-        addSel.appendChild(opt1);
-
-        const opt2 = document.createElement('option');
-        opt2.value = String(s.id);
-        opt2.textContent = full;
-        filterSel.appendChild(opt2);
+    async function loadStudents(){
+      const r=await fetch('/api/students'); students=await r.json();
+      students.sort((a,b)=>(a.last_name||'').localeCompare(b.last_name||'')||(a.first_name||'').localeCompare(b.first_name||''));
+      const addSel=document.getElementById('addStudentName'), filterSel=document.getElementById('filterStudentName');
+      addSel.innerHTML='<option value="">(Select student)</option>'; filterSel.innerHTML='<option value="">All students</option>'; idToName.clear();
+      students.forEach(s=>{ const full=(s.first_name||'')+' '+(s.last_name||''); idToName.set(s.id,full);
+        for (const sel of [addSel,filterSel]) { const o=document.createElement('option'); o.value=String(s.id); o.textContent=full; sel.appendChild(o); }
       });
     }
 
-    async function loadPayments(studentId) {
-      const qs = studentId ? ('?student_id=' + encodeURIComponent(studentId)) : '';
-      const res = await fetch('/api/payments' + qs);
-      const list = await res.json();
-      const tbody = document.getElementById('payBody');
-      tbody.innerHTML = '';
-      (list || []).forEach(p => {
-        const tr = document.createElement('tr');
-        const name = p.student_id ? (idToName.get(p.student_id) || ('ID ' + p.student_id)) : '';
+    async function loadPayments(studentId){
+      const qsParam=studentId?('?student_id='+encodeURIComponent(studentId)):'';
+      const r=await fetch('/api/payments'+qsParam); const list=await r.json(); const tb=document.getElementById('body'); tb.innerHTML='';
+      (list||[]).forEach(p=>{
+        const tr=document.createElement('tr'); const name=p.student_id?(idToName.get(p.student_id)||('ID '+p.student_id)):'';
         tr.innerHTML = `
           <td>${p.id}</td>
           <td>${name}</td>
           <td>$${Number(p.amount||0).toFixed(2)}</td>
-          <td>${p.date || ''}</td>
-          <td>${Number(p.taxable) ? 'Yes' : 'No'}</td>
-          <td>${p.method || ''}</td>
-          <td><button class="del" data-id="${p.id}">Delete</button></td>
-        `;
-        tbody.appendChild(tr);
+          <td>${p.date||''}</td>
+          <td>${Number(p.taxable)?'Yes':'No'}</td>
+          <td>${p.method||''}</td>
+          <td class="row-actions"><button class="del" data-id="${p.id}">Delete</button></td>`;
+        tb.appendChild(tr);
       });
     }
 
-    // Add payment: use selected student id
-    document.getElementById('addBtn').addEventListener('click', async () => {
-      const student_id = document.getElementById('addStudentName').value || null;
-      const amount = document.getElementById('amount').value;
-      const date = document.getElementById('date').value;
-      const taxable = document.getElementById('taxable').value === '1';
-      const method = document.getElementById('method').value.trim() || null;
+    async function loadMonthly(studentId, year){
+      const res = await fetch('/api/payments/by-student/'+encodeURIComponent(studentId)+'/monthly?year='+encodeURIComponent(year));
+      const data = await res.json(); const rows = data.rows||[];
+      const totals = Array(12).fill(0);
+      rows.forEach(r=>{ const m = parseInt(r.m,10)-1; if(m>=0 && m<12) totals[m] = Number(r.total||0); });
 
-      if (!student_id) { alert('Please select a student'); return; }
-      if (!amount || !date) { alert('Amount and Date are required'); return; }
+      document.getElementById('yearLabel').textContent = String(year);
+      const grid = document.getElementById('monthsGrid'); grid.innerHTML='';
+      for(let i=0;i<12;i++){
+        const card = document.createElement('div'); card.className='card';
+        card.innerHTML = `<div><strong>${monthNames[i]}</strong></div>
+                          <div>$${totals[i].toFixed(2)}</div>`;
+        grid.appendChild(card);
+      }
+    }
 
-      const r = await fetch('/api/payments', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ student_id, amount, date, taxable, method })
-      });
-      if (r.ok) {
-        const sel = document.getElementById('filterStudentName');
-        const selectedId = sel.value || null;
-        await loadPayments(selectedId);
-        // optional: clear amount/date/method
-        // document.getElementById('amount').value = '';
-        // document.getElementById('date').value = '';
-        // document.getElementById('method').value = '';
-      } else {
-        alert('Error adding payment');
+    document.getElementById('addBtn').addEventListener('click', async ()=>{
+      const student_id=document.getElementById('addStudentName').value||'';
+      const amount=document.getElementById('amount').value;
+      const date=document.getElementById('date').value;
+      const taxable=document.getElementById('taxable').value==='1';
+      const method=document.getElementById('method').value;
+      if(!student_id || !amount || !date){ alert('Student, Amount, Date are required'); return; }
+      const r=await fetch('/api/payments', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ student_id, amount, date, taxable, method }) });
+      const sid = qs('student_id'); const f=document.getElementById('filterStudentName').value||null;
+      if(r.ok){
+        if(sid){ await loadMonthly(sid, Number(document.getElementById('yearLabel').textContent||new Date().getFullYear())); }
+        await loadPayments(f || (sid || null));
+      } else { const t=await r.text(); alert('Error: '+t); }
+    });
+
+    document.addEventListener('click', async (e)=>{
+      if(e.target.matches('.del')){
+        const id=e.target.dataset.id; if(!confirm('Delete this payment?')) return;
+        const r=await fetch('/api/payments/'+id, { method:'DELETE' });
+        const sid = qs('student_id'); const f=document.getElementById('filterStudentName').value||null;
+        if(r.ok){
+          if(sid){ await loadMonthly(sid, Number(document.getElementById('yearLabel').textContent||new Date().getFullYear())); }
+          await loadPayments(f || (sid || null));
+        } else alert('Error deleting');
       }
     });
 
-    // Delete payment
-    document.addEventListener('click', async (e) => {
-      if (e.target.matches('.del')) {
-        const id = e.target.getAttribute('data-id');
-        if (!confirm('Delete this payment?')) return;
-        const r = await fetch('/api/payments/' + id, { method:'DELETE' });
-        if (r.ok) {
-          const sel = document.getElementById('filterStudentName');
-          const selectedId = sel.value || null;
-          await loadPayments(selectedId);
-        } else {
-          alert('Error deleting');
-        }
-      }
-    });
+    document.getElementById('filterBtn').addEventListener('click',()=>loadPayments(document.getElementById('filterStudentName').value||null));
+    document.getElementById('clearFilterBtn').addEventListener('click',()=>{document.getElementById('filterStudentName').value=''; loadPayments(null);});
 
-    // Filters
-    document.getElementById('filterBtn').addEventListener('click', () => {
-      const sel = document.getElementById('filterStudentName');
-      loadPayments(sel.value || null);
-    });
-    document.getElementById('clearFilterBtn').addEventListener('click', () => {
-      const sel = document.getElementById('filterStudentName');
-      sel.value = '';
-      loadPayments(null);
-    });
+    (function(){ const t=new Date(); document.getElementById('date').value=t.toISOString().slice(0,10); })();
 
-    // Init
-    (async function init() {
+    (async()=>{
       await loadStudents();
-      await loadPayments(null);
+
+      // Context: if we came from Students "View Payments", show monthly for that student
+      const sid = qs('student_id');
+      const ctx = document.getElementById('context');
+      const monthly = document.getElementById('studentMonthly');
+      const listTitle = document.getElementById('listTitle');
+      if (sid) {
+        const name = idToName.get(Number(sid)) || ('ID '+sid);
+        ctx.textContent = 'Viewing payments for: ' + name;
+        monthly.style.display = 'block';
+        listTitle.textContent = 'Payments List (filtered)';
+        let year = new Date().getFullYear();
+        document.getElementById('yearLabel').textContent = String(year);
+        await loadMonthly(sid, year);
+        document.getElementById('prevYear').onclick = ()=>{ year--; loadMonthly(sid, year); };
+        document.getElementById('nextYear').onclick = ()=>{ year++; loadMonthly(sid, year); };
+        await loadPayments(sid);
+        // Also pre-select in dropdowns
+        document.getElementById('addStudentName').value = String(sid);
+        document.getElementById('filterStudentName').value = String(sid);
+      } else {
+        ctx.textContent = '';
+        monthly.style.display = 'none';
+        await loadPayments(null);
+      }
     })();
   </script>
 </body>

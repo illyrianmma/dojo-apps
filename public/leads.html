@@ -1,96 +1,88 @@
-﻿<!-- leads.html build v2025-10-10-6 (adds follow-up badges/colors) -->
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Leads</title>
-  <link rel="stylesheet" href="styles.css?v=2" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-</head><body>
-<h1>Leads</h1><p><a href="index.html">← Back to Main</a></p>
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Leads</title>
+  <style>
+    body{font-family:sans-serif;max-width:900px;margin:2rem auto}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #ccc;padding:6px}
+    input,button{margin:2px}
+  </style>
+</head>
+<body>
+  <h1>Leads</h1>
+  <div>
+    <input id="name"  placeholder="Name">
+    <input id="phone" placeholder="Phone">
+    <input id="email" placeholder="Email">
+    <input id="program" placeholder="Interested Program">
+    <button id="add">Add Lead</button>
+  </div>
 
-<div id="err" class="error"></div>
+  <h2>Lead List</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Actions</th></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
 
-<h2>Add Lead</h2>
-<div class="row">
-  <input id="name" placeholder="Name" />
-  <input id="phone" placeholder="Phone" />
-  <input id="email" placeholder="Email" />
-  <input id="interested_program" placeholder="Interested Program" />
-  <input id="follow_up_date" type="date" />
-  <select id="status"><option>new</option><option>contacted</option><option>converted</option><option>lost</option></select>
-  <input id="notes" placeholder="Notes" />
-  <button id="addBtn">Add Lead</button>
-</div>
+  <p><a href="index.html">Back to Main Page</a></p>
 
-<h2>Leads List</h2>
-<table id="leadTable"><thead>
-  <tr><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Follow-up</th><th>Status</th><th>Notes</th><th>Actions</th></tr>
-</thead><tbody></tbody></table>
-<p class="note muted">Marker: leads.html build v2025-10-10-6</p>
+  <script>
+    async function load(){
+      const r = await fetch('/api/leads');
+      const rows = await r.json();
+      const tb = document.getElementById('body'); tb.innerHTML='';
+      rows.forEach(L=>{
+        const [first,...rest] = String(L.name||'').trim().split(' ');
+        const last = rest.join(' ');
+        const toStudents = `students.html?first_name=${encodeURIComponent(first||'')}&last_name=${encodeURIComponent(last||'')}&phone=${encodeURIComponent(L.phone||'')}&email=${encodeURIComponent(L.email||'')}&program=${encodeURIComponent(L.interested_program||'')}`;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${L.id}</td>
+          <td>${L.name||''}</td>
+          <td>${L.phone||''}</td>
+          <td>${L.email||''}</td>
+          <td>${L.interested_program||''}</td>
+          <td>
+            <button class="edit" data-id="${L.id}">Edit</button>
+            <button class="del"  data-id="${L.id}">Delete</button>
+            <a href="${toStudents}">Lead → Student</a>
+          </td>`;
+        tb.appendChild(tr);
+      });
+    }
 
-<script>
-const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
-const err=$('#err'); function showError(m){err.textContent=m||''; err.style.display=m?'block':'none';}
-function todayISO(){return new Date().toISOString().slice(0,10)}
-function daysOverdue(iso){ if(!iso) return null; const delta=Math.floor((new Date(todayISO())-new Date(iso))/(1000*60*60*24)); return delta; }
-function followBadge(iso,status){
-  if(!iso) return {html:'<span class="badge info">No date</span>', row:''};
-  if(status==='converted' || status==='lost') return {html:'<span class="badge ok">'+status+'</span>', row:''};
-  const d=daysOverdue(iso); // days past due (>=0 means due today/past)
-  if (d===null) return {html:'',row:''};
-  if (d < 0) return {html:`<span class="badge info">In ${-d}d</span>`, row:''};       // future date
-  if (d >= 30) return {html:`<span class="badge danger2">${d}d overdue</span>`, row:'followup-4'};
-  if (d >= 14) return {html:`<span class="badge danger">${d}d overdue</span>`,  row:'followup-3'};
-  if (d >= 7)  return {html:`<span class="badge warn2">${d}d overdue</span>`,  row:'followup-2'};
-  if (d >= 3)  return {html:`<span class="badge warn">${d}d overdue</span>`,   row:'followup-1'};
-  if (d >= 0)  return {html:`<span class="badge warn">Due</span>`,             row:'followup-1'};
-  return {html:'',row:''};
-}
+    document.addEventListener('click', async (e)=>{
+      if(e.target.id==='add'){
+        const payload = {
+          name:  document.getElementById('name').value.trim(),
+          phone: document.getElementById('phone').value.trim() || null,
+          email: document.getElementById('email').value.trim() || null,
+          interested_program: document.getElementById('program').value.trim() || null
+        };
+        if(!payload.name){ alert('Name is required'); return; }
+        const r = await fetch('/api/leads', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if(r.ok){ document.getElementById('name').value=''; load(); } else alert('Error adding lead');
+      }
+      if(e.target.matches('.del')){
+        const id = e.target.dataset.id;
+        if(!confirm('Delete this lead?')) return;
+        const r = await fetch('/api/leads/'+id, { method:'DELETE' });
+        if(r.ok) load(); else alert('Error deleting');
+      }
+      if(e.target.matches('.edit')){
+        const id = e.target.dataset.id;
+        const L = await (await fetch('/api/leads/'+id)).json();
+        const name  = prompt('Name:',  L.name||'');  if(name===null) return;
+        const phone = prompt('Phone:', L.phone||''); if(phone===null) return;
+        const email = prompt('Email:', L.email||''); if(email===null) return;
+        const prog  = prompt('Interested Program:', L.interested_program||''); if(prog===null) return;
+        const r = await fetch('/api/leads/'+id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, phone, email, interested_program: prog }) });
+        if(r.ok) load(); else alert('Error updating');
+      }
+    });
 
-async function loadLeads(){
-  showError('');
-  const arr=await (await fetch('/api/leads')).json();
-  const tbody=$('#leadTable tbody'); tbody.innerHTML='';
-  for(const l of arr){
-    const sev=followBadge(l.follow_up_date,l.status);
-    const tr=document.createElement('tr');
-    if(sev.row) tr.classList.add(sev.row);
-    tr.innerHTML=`
-      <td>${l.name||''}</td>
-      <td>${l.phone||''}</td>
-      <td>${l.email||''}</td>
-      <td>${l.interested_program||''}</td>
-      <td>${(l.follow_up_date||'')} ${sev.html}</td>
-      <td>
-        <select data-id="${l.id}" class="status">
-          ${['new','contacted','converted','lost'].map(s=>`<option ${s===l.status?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </td>
-      <td>${l.notes||''}</td>
-      <td>
-        <button data-id="${l.id}" class="del">Delete</button>
-        ${l.status!=='converted' ? `<button data-id="${l.id}" class="convert">Convert to Student</button>` : ''}
-      </td>`;
-    tbody.appendChild(tr);
-  }
-  $$('#leadTable .del').forEach(b=>b.onclick=async()=>{await fetch('/api/leads/'+b.dataset.id,{method:'DELETE'}); loadLeads();});
-  $$('#leadTable .status').forEach(sel=> sel.onchange=async()=>{await fetch('/api/leads/'+sel.dataset.id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:sel.value})}); loadLeads();});
-  $$('#leadTable .convert').forEach(btn => btn.onclick = async () => {
-    showError('');
-    try{
-      const res = await fetch('/api/leads/'+btn.dataset.id+'/convert',{method:'POST'});
-      if(!res.ok){ throw new Error(await res.text()); }
-      const info = await res.json();
-      alert(info.created_new ? 'Student created from lead.' : 'Existing student updated from lead.');
-      loadLeads();
-    }catch(e){ showError(e.message||'Conversion failed.'); }
-  });
-}
-
-$('#addBtn').onclick=async()=>{
-  showError('');
-  const p={name:$('#name').value,phone:$('#phone').value,email:$('#email').value,interested_program:$('#interested_program').value,follow_up_date:$('#follow_up_date').value,status:$('#status').value,notes:$('#notes').value};
-  await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
-  $('#name').value=$('#phone').value=$('#email').value=''; $('#interested_program').value=$('#follow_up_date').value=''; $('#notes').value='';
-  loadLeads();
-};
-loadLeads();
-</script>
-</body></html>
+    load();
+  </script>
+</body>
+</html>

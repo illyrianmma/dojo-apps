@@ -1,0 +1,16 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Moving...</title></head>
+<body>
+<script>
+(async function(){
+  const u = new URL(location.href);
+  const id = u.searchParams.get("id");
+  if(!id){ location.href = "students_legacy.html"; return; }
+  try {
+    const r = await fetch("/api/students/"+encodeURIComponent(id)+"/move-to-new", { method:"POST" });
+    // ignore response details; redirect either way
+  } catch(e) { /* ignore */ }
+  location.href = "students.html?id=" + encodeURIComponent(id);
+})();
+</script>
+</body></html>
