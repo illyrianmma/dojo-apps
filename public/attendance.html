@@ -1,160 +1,61 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Attendance</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-    input, button, select { margin: 2px; }
-    .row { margin: .35rem 0; }
-  </style>
-</head>
-<body>
-  <h1>Attendance</h1>
+﻿<!DOCTYPE html><html><head><meta charset="utf-8"><title>Attendance</title>
+<style>body{font-family:sans-serif;max-width:900px;margin:20px auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px}</style>
+</head><body>
+<h1>Attendance</h1>
+<p><a href="index.html">Back</a></p>
 
-  <h2>Add Attendance</h2>
-  <div class="row">
-    <label>Student:
-      <select id="addStudentName" style="min-width:14rem">
-        <option value="">(Select student)</option>
-      </select>
-    </label>
-    <label>Date: <input type="date" id="att_date"></label>
-    <label>Present:
-      <select id="present">
-        <option value="1">Present</option>
-        <option value="0">Absent</option>
-      </select>
-    </label>
-    <button id="addBtn">Mark Attendance</button>
-  </div>
+<div>
+  <label>Student <select id="student"><option value="">(Select)</option></select></label>
+  <label>Date <input id="date" type="date"></label>
+  <label>Present <select id="present"><option value="1">Yes</option><option value="0">No</option></select></label>
+  <button id="add">Add</button>
+</div>
 
-  <h2>Records</h2>
-  <div class="row">
-    <label>Filter by Name:
-      <select id="filterStudentName" style="min-width:14rem">
-        <option value="">All students</option>
-      </select>
-    </label>
-    <button id="filterBtn">Apply</button>
-    <button id="clearFilterBtn">Clear</button>
-  </div>
+<table>
+  <thead><tr><th>ID</th><th>Name</th><th>Date</th><th>Present</th><th>Actions</th></tr></thead>
+  <tbody id="tb"></tbody>
+</table>
 
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Name</th><th>Date</th><th>Present</th><th>Actions</th></tr>
-    </thead>
-    <tbody id="attBody"></tbody>
-  </table>
-
-  <p><a href="index.html">Back to Main Page</a></p>
-
-  <script>
-    let students = [];
-    const idToName = new Map();
-
-    async function loadStudents() {
-      const res = await fetch('/api/students');
-      students = await res.json();
-      students.sort((a,b) =>
-        (a.last_name||'').localeCompare(b.last_name||'') ||
-        (a.first_name||'').localeCompare(b.first_name||'')
-      );
-
-      const addSel = document.getElementById('addStudentName');
-      const filterSel = document.getElementById('filterStudentName');
-      addSel.innerHTML = '<option value="">(Select student)</option>';
-      filterSel.innerHTML = '<option value="">All students</option>';
-      idToName.clear();
-
-      students.forEach(s => {
-        const full = (s.first_name||'') + ' ' + (s.last_name||'');
-        idToName.set(s.id, full);
-
-        const opt1 = document.createElement('option');
-        opt1.value = String(s.id);
-        opt1.textContent = full;
-        addSel.appendChild(opt1);
-
-        const opt2 = document.createElement('option');
-        opt2.value = String(s.id);
-        opt2.textContent = full;
-        filterSel.appendChild(opt2);
-      });
-    }
-
-    async function loadAttendance(studentId) {
-      const qs = studentId ? ('?student_id=' + encodeURIComponent(studentId)) : '';
-      const res = await fetch('/api/attendance' + qs);
-      const list = await res.json();
-      const tbody = document.getElementById('attBody');
-      tbody.innerHTML = '';
-      (list || []).forEach(r => {
-        const tr = document.createElement('tr');
-        const name = r.student_id ? (idToName.get(r.student_id) || ('ID ' + r.student_id)) : '';
-        tr.innerHTML = `
-          <td>${r.id}</td>
-          <td>${name}</td>
-          <td>${r.date}</td>
-          <td>${Number(r.present) ? 'Present' : 'Absent'}</td>
-          <td><button class="del" data-id="${r.id}">Delete</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    document.getElementById('addBtn').addEventListener('click', async () => {
-      const student_id = document.getElementById('addStudentName').value || '';
-      const date = document.getElementById('att_date').value;
-      const present = document.getElementById('present').value === '1';
-      if (!student_id || !date) { alert('Please select a student and date'); return; }
-
-      const r = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({ student_id, date, present })
-      });
-      if (r.ok) {
-        const filterVal = document.getElementById('filterStudentName').value || '';
-        await loadAttendance(filterVal || null);
-      } else {
-        alert('Error adding attendance');
-      }
-    });
-
-    document.addEventListener('click', async (e) => {
-      if (e.target.matches('.del')) {
-        const id = e.target.getAttribute('data-id');
-        const r = await fetch('/api/attendance/' + id, { method:'DELETE' });
-        if (r.ok) {
-          const filterVal = document.getElementById('filterStudentName').value || '';
-          await loadAttendance(filterVal || null);
-        } else {
-          alert('Error deleting');
-        }
-      }
-    });
-
-    document.getElementById('filterBtn').addEventListener('click', () => {
-      const val = document.getElementById('filterStudentName').value || '';
-      loadAttendance(val || null);
-    });
-    document.getElementById('clearFilterBtn').addEventListener('click', () => {
-      document.getElementById('filterStudentName').value = '';
-      loadAttendance(null);
-    });
-
-    (async function init() {
-      // Prefill date to today for convenience
-      const today = new Date();
-      document.getElementById('att_date').value = today.toISOString().slice(0,10);
-
-      await loadStudents();     // build dropdowns + map
-      await loadAttendance(null);
-    })();
-  </script>
-</body>
-</html>
+<script>
+let students=[]; const idToName=new Map();
+async function loadStudents(){
+  const r=await fetch('/api/students'); students=await r.json(); students.forEach(s=>idToName.set(s.id, (s.first_name||'')+' '+(s.last_name||'')));
+  const sel=document.getElementById('student'); sel.innerHTML='<option value="">(Select)</option>';
+  students.forEach(s=>{ const o=document.createElement('option'); o.value=String(s.id); o.textContent=idToName.get(s.id); sel.appendChild(o); });
+}
+function nm(id){ return idToName.get(id)||('ID '+id); }
+async function load(){
+  const r=await fetch('/api/attendance'); const list=await r.json(); const tb=document.getElementById('tb'); tb.innerHTML='';
+  (list||[]).forEach(a=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td>${a.id}</td><td>${nm(a.student_id)}</td><td>${a.date||''}</td><td>${Number(a.present)?'Yes':'No'}</td>
+      <td><button class="edit" data-id="${a.id}">Edit</button> <button class="del" data-id="${a.id}">Delete</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+document.getElementById('add').onclick=async()=>{
+  const student_id=document.getElementById('student').value;
+  const payload={ student_id, date:document.getElementById('date').value, present:document.getElementById('present').value==='1' };
+  if(!student_id || !payload.date){ alert('Student and date required'); return; }
+  const r=await fetch('/api/attendance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!r.ok){alert('Add failed');return;} load();
+};
+document.addEventListener('click',async(e)=>{
+  if(e.target.matches('.del')){ if(!confirm('Delete?'))return;
+    const r=await fetch('/api/attendance/'+e.target.dataset.id,{method:'DELETE'}); if(r.ok) load(); else alert('Delete failed'); }
+  if(e.target.matches('.edit')){
+    const id=e.target.dataset.id; const row=e.target.closest('tr'); const t=row.children;
+    const date   = prompt('Date (YYYY-MM-DD):', t[2].textContent)||''; if(date===null) return;
+    const present= confirm('Present? OK=Yes, Cancel=No');
+    // NOTE: student change via edit not included (keeps same student)
+    const nameCell = t[1].textContent; const s = students.find(x => (x.first_name+' '+x.last_name)===nameCell);
+    const student_id = s ? s.id : null;
+    const r=await fetch('/api/attendance/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({student_id,date,present})});
+    if(r.ok) load(); else alert('Update failed');
+  }
+});
+(function(){ const t=new Date(); document.getElementById('date').value=t.toISOString().slice(0,10);})();
+(async()=>{ await loadStudents(); await load(); })();
+</script>
+</body></html>
