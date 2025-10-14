@@ -45,8 +45,7 @@
   </table>
 
   <script>
-    const fmt = d => d.toISOString().slice(0,10);
-
+    // Prefill from Leads (if coming via query)
     (function(){
       const u = new URL(location.href);
       const m = k => u.searchParams.get(k);
@@ -54,13 +53,26 @@
       for (const [q,id] of Object.entries(map)) { const v=m(q); if(v) document.getElementById(id).value=v; }
     })();
 
+    // Default dates (join=today, renewal=+28 days) if blank
     (function(){
+      const t=new Date(); const fmt=d=>d.toISOString().slice(0,10);
       const s = document.getElementById('start_date');
       const r = document.getElementById('renewal_date');
-      const t = new Date();
       if(!s.value) s.value = fmt(t);
-      if(!r.value){ const d = new Date(t); d.setDate(d.getDate()+28); r.value = fmt(d); }
+      if(!r.value){ const d=new Date(t); d.setDate(d.getDate()+28); r.value = fmt(d); }
     })();
+
+    async function uploadPhotoIfAny() {
+      const f = document.getElementById('photo_file').files[0];
+      if (!f) return null;
+      const fd = new FormData(); fd.append('image', f);
+      let r;
+      try { r = await fetch('/api/uploads/image', { method:'POST', body: fd }); }
+      catch(e) { alert('Photo upload failed: ' + (e?.message||e)); return null; }
+      if (!r.ok) { const t=await r.text(); alert('Photo upload failed: ' + t); return null; }
+      const j = await r.json();
+      return j.url || null;
+    }
 
     function rowHTML(s){
       const full = (s.first_name||'')+' '+(s.last_name||'');
@@ -78,50 +90,46 @@
           <a href="${oldLink}">Old View</a>
           <button class="to-old" data-id="${s.id}">Move to Old</button>
           <a href="${payLink}">View Payments</a>
+          <button class="edit" data-id="${s.id}">Edit</button>
           <button class="del" data-id="${s.id}">Delete</button>
         </td>
       `;
     }
 
     async function load(){
-      // IMPORTANT: only show active students
-      const r = await fetch('/api/students?legacy=false');
-      if (!r.ok) { alert('Loading students failed: '+(await r.text())); return; }
+      const r = await fetch('/api/students'); // active list handled server-side if using is_legacy
       const rows = await r.json();
       const tb = document.getElementById('tbody'); tb.innerHTML='';
+      const u  = new URL(location.href);
+      const targetId = u.searchParams.get('id');
+      let targetTr = null;
       (rows||[]).forEach(s=>{
         const tr = document.createElement('tr'); tr.dataset.id = String(s.id);
         tr.innerHTML = rowHTML(s);
+        if (targetId && String(s.id) === String(targetId)) { tr.classList.add('highlight'); targetTr = tr; }
         tb.appendChild(tr);
       });
-    }
-
-    async function uploadPhotoIfAny() {
-      const f = document.getElementById('photo_file').files[0];
-      if (!f) return null;
-      const fd = new FormData(); fd.append('image', f);
-      const r = await fetch('/api/uploads/image', { method:'POST', body: fd });
-      if (!r.ok) { const t=await r.text(); alert('Photo upload failed: '+t); return null; }
-      const j = await r.json(); return j.url || null;
+      if (targetTr) targetTr.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     async function addStudent(){
       const first_name = document.getElementById('first_name').value.trim();
       const last_name  = document.getElementById('last_name').value.trim();
       if (!first_name || !last_name) { alert('First and Last name required'); return; }
+
+      // Ensure dates if user cleared them
       const s = document.getElementById('start_date');
       const r = document.getElementById('renewal_date');
-      if(!s.value){ const t=new Date(); s.value = fmt(t); }
-      if(!r.value){ const t=new Date(); t.setDate(t.getDate()+28); r.value = fmt(t); }
+      if(!s.value){ const t=new Date(); s.value=t.toISOString().slice(0,10); }
+      if(!r.value){ const t=new Date(); t.setDate(t.getDate()+28); r.value=t.toISOString().slice(0,10); }
 
+      // photo
       let photo = await uploadPhotoIfAny();
-      if (!photo) {
-        const url = document.getElementById('photo_url').value.trim();
-        if (url) photo = url;
-      }
+      if (!photo) { const url = document.getElementById('photo_url').value.trim(); if (url) photo = url; }
 
       const payload = {
-        first_name, last_name,
+        first_name,
+        last_name,
         phone:   document.getElementById('phone').value.trim() || null,
         program: document.getElementById('program').value.trim() || null,
         start_date:   document.getElementById('start_date').value || null,
@@ -133,36 +141,77 @@
         is_legacy: false
       };
 
-      const rPost = await fetch('/api/students', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-      if (!rPost.ok) { alert('Error adding student: ' + (await rPost.text())); return; }
-      await load();
+      let rPost;
+      try {
+        rPost = await fetch('/api/students', {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+      } catch(e) { alert('Network error adding student: ' + (e?.message||e)); return; }
+
+      if (!rPost.ok) { const text = await rPost.text(); alert('Error adding student: ' + text); return; }
+
+      // clear minimal fields and reload
       document.getElementById('first_name').value = '';
       document.getElementById('last_name').value  = '';
       document.getElementById('photo_file').value = '';
       document.getElementById('photo_url').value  = '';
+      await load();
     }
 
+    document.getElementById('addBtn').addEventListener('click', addStudent);
+
     document.addEventListener('click', async (e)=>{
+      // DELETE
       if (e.target.matches('.del')) {
         const id = e.target.dataset.id;
         if (!confirm('Delete this student?')) return;
-        const r = await fetch('/api/students/'+encodeURIComponent(id), { method:'DELETE' });
-        if (!r.ok) { alert('Error deleting: ' + (await r.text())); return; }
-        await load();
+        const r = await fetch('/api/students/'+id, { method:'DELETE' });
+        if (r.ok) load(); else alert('Error deleting');
       }
+
+      // EDIT (prompt-based, simple, preserves look)
+      if (e.target.matches('.edit')) {
+        const id = e.target.dataset.id;
+        const s = await (await fetch('/api/students/'+id)).json();
+        const first_name = prompt('First Name:', s.first_name||''); if(first_name===null) return;
+        const last_name  = prompt('Last Name:',  s.last_name||'');  if(last_name===null)  return;
+        const phone      = prompt('Phone:',      s.phone||'');      if(phone===null)      return;
+        const program    = prompt('Program:',    s.program||'');    if(program===null)    return;
+        const start_date = prompt('Start (YYYY-MM-DD):', s.start_date||''); if(start_date===null) return;
+        const renewal_date = prompt('Renewal (YYYY-MM-DD):', s.renewal_date||''); if(renewal_date===null) return;
+        const email      = prompt('Email:',      s.email||'');      if(email===null)      return;
+        const address    = prompt('Address:',    s.address||'');    if(address===null)    return;
+        const age        = prompt('Age:',        s.age||'');        if(age===null)        return;
+        const photo      = prompt('Photo URL (leave blank to keep current):', s.photo||''); if(photo===null) return;
+
+        const payload = {
+          first_name, last_name, phone, program, start_date, renewal_date,
+          email, address, age, photo: (photo ? photo : (s.photo||null))
+        };
+
+        const r = await fetch('/api/students/'+id, {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        if (r.ok) load(); else alert('Error updating');
+      }
+
+      // MOVE TO OLD (remove from list immediately after success)
       if (e.target.matches('.to-old')) {
         const id = e.target.dataset.id;
         if (!confirm('Move this student to the Old Students page?')) return;
-        const r = await fetch('/api/students/'+encodeURIComponent(id)+'/legacy', {
+        const r = await fetch('/api/students/'+id+'/legacy', {
           method:'PUT', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ is_legacy: true })
+          body: JSON.stringify({ is_legacy:true })
         });
-        if (!r.ok) { alert('Error moving to old: ' + (await r.text())); return; }
-        await load(); // reload now shows only active => row disappears
+        if (r.ok) {
+          // remove the row instantly so it disappears from current list
+          const tr = e.target.closest('tr'); if (tr) tr.remove();
+        } else {
+          alert('Error moving');
+        }
       }
     });
 
-    document.getElementById('addBtn').addEventListener('click', addStudent);
     load();
   </script>
 </body>
