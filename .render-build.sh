@@ -1,5 +1,9 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -e
 
-# Ensure fresh build of sqlite3
-npm install --build-from-source sqlite3
+# Render runs builds in /opt/render/project/src
+echo "[render] Ensuring persistent folders exist…"
+mkdir -p /var/data/uploads || true
+mkdir -p /data/uploads || true
+
+# You can add any prestart steps here (migrations, etc.)
