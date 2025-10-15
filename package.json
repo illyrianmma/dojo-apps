@@ -9,7 +9,7 @@
     "author":  "James",
     "license":  "ISC",
     "engines":  {
-                    "node":  "\u003e=20"
+                    "node":  "20.x"
                 },
     "dependencies":  {
                          "express":  "^4.21.2",
