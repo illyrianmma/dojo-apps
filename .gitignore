@@ -1,4 +1,4 @@
-# node / build
+﻿# node / build
 node_modules/
 npm-debug.log*
 yarn.lock
@@ -14,3 +14,8 @@ public/uploads/
 # OS junk
 .DS_Store
 Thumbs.db
+
+dojo.db
+public\uploads\
+backups\
+
