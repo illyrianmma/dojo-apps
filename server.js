@@ -5,6 +5,8 @@ const express = require('express');
 
 const path = require('path');
 const { DATA_DIR, DB_PATH, UPLOADS_DIR } = require('./persist');
+const path = require('path');
+const { DATA_DIR, DB_PATH, UPLOADS_DIR } = require('./persist');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
@@ -135,6 +137,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
 
 
 
