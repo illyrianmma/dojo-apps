@@ -10,7 +10,6 @@ const PORT = process.env.PORT || 3000;
 
 // DB path (can be redirected in production with DOJO_DB)
 /* e.g. DOJO_DB=/var/data/dojo.db on Render when using a Persistent Disk */
-const DB_PATH = process.env.DOJO_DB || path.join(__dirname, 'dojo.db');
 console.log('[dojo] DB =', DB_PATH);
 const db = new sqlite3.Database(DB_PATH);
 
@@ -22,7 +21,6 @@ app.use((req, _res, next) => { req.db = db; next(); });
 
 // Uploads dir (can be redirected with UPLOADS_DIR)
 /* e.g. UPLOADS_DIR=/var/data/uploads on Render */
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 console.log('[dojo] UPLOADS_DIR =', UPLOADS_DIR);
 console.log('[dojo] ADMIN_TOKEN length =', (process.env.ADMIN_TOKEN || '').length);
@@ -133,6 +131,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
+
 
 
 
