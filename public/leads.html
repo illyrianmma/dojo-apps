@@ -1,63 +1,95 @@
-﻿<!DOCTYPE html><html><head><meta charset="utf-8"><title>Leads</title>
-<style>body{font-family:sans-serif;max-width:1000px;margin:20px auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px}</style>
-</head><body>
-<h1>Leads</h1>
-<p><a href="index.html">Back</a> | <a href="students.html">Students</a></p>
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Leads</title>
+<link rel="stylesheet" href="main.css"/>
+</head><body><div class="container">
+  <h1>Leads</h1>
+  <div class="card">
+    <h2>Add Lead</h2>
+    <div class="grid">
+      <input id="name" placeholder="Name">
+      <input id="phone" placeholder="Phone">
+      <input id="email" placeholder="Email">
+      <input id="interested_program" placeholder="Interested Program">
+      <input id="follow_up_date" type="date" placeholder="Follow-up date">
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-primary" id="addLead">Add Lead</button>
+      <span class="badge" id="status"></span>
+    </div>
+  </div>
 
-<h2>Add Lead</h2>
-<div>
-  <label>Name <input id="name"></label>
-  <label>Phone <input id="phone"></label>
-  <label>Email <input id="email"></label>
-  <label>Program <input id="prog"></label>
-  <label>Date <input id="date" type="date"></label>
-  <label>Notes <input id="notes"></label>
-  <button id="add">Add</button>
+  <div class="card">
+    <h2>Leads List</h2>
+    <table class="table" id="leadsTable">
+      <thead><tr><th>Name</th><th>Phone</th><th>Program</th><th>Follow-up</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <p><a href="index.html">Back to Main</a></p>
 </div>
 
-<h2>Leads</h2>
-<table>
-  <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Date</th><th>Notes</th><th>Actions</th></tr></thead>
-  <tbody id="tb"></tbody>
-</table>
-
 <script>
-function fmt(d){return d?d:'';}
+const $ = s=>document.querySelector(s);
+const api = (p,opt)=>fetch(p,opt).then(r=>r.ok?r.json():r.json().then(e=>Promise.reject(e)));
+
 async function load(){
-  const r=await fetch('/api/leads'); const list=await r.json(); const tb=document.getElementById('tb'); tb.innerHTML='';
-  (list||[]).forEach(x=>{
-    const tr=document.createElement('tr');
+  const data = await api('/api/leads');
+  const tb = document.querySelector('#leadsTable tbody'); tb.innerHTML='';
+  data.forEach(l=>{
+    const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${x.id}</td><td>${fmt(x.name)}</td><td>${fmt(x.phone)}</td><td>${fmt(x.email)}</td>
-      <td>${fmt(x.interested_program)}</td><td>${fmt(x.date)}</td><td>${fmt(x.notes)}</td>
+      <td>${l.name||''}</td>
+      <td>${l.phone||''}</td>
+      <td>${l.interested_program||''}</td>
+      <td>${l.follow_up_date||''}</td>
       <td>
-        <button class="edit" data-id="${x.id}">Edit</button>
-        <button class="del" data-id="${x.id}">Delete</button>
-        <a href="students.html?first_name=${encodeURIComponent((x.name||'').split(' ')[0]||'')}&last_name=${encodeURIComponent((x.name||'').split(' ').slice(1).join(' ')||'')}&phone=${encodeURIComponent(x.phone||'')}&email=${encodeURIComponent(x.email||'')}&program=${encodeURIComponent(x.interested_program||'')}">→ Add to Students</a>
+        <button class="btn" data-act="edit" data-id="${l.id}">Edit</button>
+        <button class="btn btn-danger" data-act="del" data-id="${l.id}">Delete</button>
+        <button class="btn btn-primary" data-act="convert" data-id="${l.id}">Convert → Student</button>
       </td>`;
     tb.appendChild(tr);
   });
 }
-document.getElementById('add').onclick=async()=>{
-  const payload={name:document.getElementById('name').value,phone:document.getElementById('phone').value,email:document.getElementById('email').value,interested_program:document.getElementById('prog').value,date:document.getElementById('date').value,notes:document.getElementById('notes').value};
-  const r=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!r.ok){alert('Error adding');return;} load();
-};
-document.addEventListener('click',async(e)=>{
-  if(e.target.matches('.del')){ if(!confirm('Delete lead?')) return;
-    const r=await fetch('/api/leads/'+e.target.dataset.id,{method:'DELETE'}); if(r.ok) load(); else alert('Delete failed'); }
-  if(e.target.matches('.edit')){
-    const id=e.target.dataset.id; const row=e.target.closest('tr'); const t=row.children;
-    const name=prompt('Name:', t[1].textContent)||''; if(name===null) return;
-    const phone=prompt('Phone:', t[2].textContent)||''; if(phone===null) return;
-    const email=prompt('Email:', t[3].textContent)||''; if(email===null) return;
-    const prog=prompt('Program:', t[4].textContent)||''; if(prog===null) return;
-    const date=prompt('Date (YYYY-MM-DD):', t[5].textContent)||''; if(date===null) return;
-    const notes=prompt('Notes:', t[6].textContent)||''; if(notes===null) return;
-    const r=await fetch('/api/leads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,email,interested_program:prog,date,notes})});
-    if(r.ok) load(); else alert('Update failed');
-  }
+document.querySelector('#leadsTable').addEventListener('click', async e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  const id = b.dataset.id, act = b.dataset.act;
+  try{
+    if (act==='del'){ await api('/api/leads/'+id,{method:'DELETE'}); load(); }
+    else if (act==='edit'){
+      const l = await api('/api/leads/'+id);
+      for (const k of ['name','phone','email','interested_program','follow_up_date']){
+        const el = document.getElementById(k); if (el) el.value = l[k]||'';
+      }
+      document.getElementById('status').textContent = 'Editing ID '+id;
+      document.getElementById('addLead').dataset.editing = id;
+      document.getElementById('addLead').textContent = 'Save Lead';
+    } else if (act==='convert'){
+      await api(`/api/leads/${id}/convert`, { method:'POST' });
+      load();
+      alert('Lead converted to student.');
+    }
+  }catch(err){ alert(err.error||'Error'); }
 });
+document.getElementById('addLead').onclick = async e=>{
+  const id = e.target.dataset.editing;
+  const body = {
+    name: $('#name').value.trim(),
+    phone: $('#phone').value.trim(),
+    email: $('#email').value.trim(),
+    interested_program: $('#interested_program').value.trim(),
+    follow_up_date: $('#follow_up_date').value
+  };
+  const opt = { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) };
+  try{
+    if (id){ await api('/api/leads/'+id, { ...opt, method:'PUT' }); e.target.dataset.editing=''; e.target.textContent='Add Lead'; }
+    else { await api('/api/leads', opt); }
+    document.getElementById('status').textContent = 'Saved.';
+    load();
+  }catch(err){ alert(err.error||'Error'); }
+};
+
 load();
 </script>
 </body></html>

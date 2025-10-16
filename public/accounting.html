@@ -1,78 +1,45 @@
-﻿<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Accounting</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; }
-    h1, h2, h3 { margin: .3rem 0; }
-    table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
-    .row { margin: .5rem 0; }
-  </style>
-</head>
-<body>
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Accounting</title>
+<link rel="stylesheet" href="main.css"/>
+</head><body><div class="container">
   <h1>Accounting</h1>
-
-  <h2>Summary</h2>
-  <div id="summary">
-    <p><strong>Total Income:</strong> <span id="sumIncome">$0.00</span></p>
-    <p><strong>Total Expenses:</strong> <span id="sumExpenses">$0.00</span></p>
-    <p><strong>Taxable Expenses:</strong> <span id="sumTaxExp">$0.00</span></p>
-    <p><strong>Non-Taxable Expenses:</strong> <span id="sumNonTaxExp">$0.00</span></p>
-    <p><strong>Net Balance:</strong> <span id="sumNet">$0.00</span></p>
+  <div class="card">
+    <div class="toolbar">
+      <label>From <input type="date" id="from"></label>
+      <label>To <input type="date" id="to"></label>
+      <button class="btn btn-primary" id="run">Run</button>
+      <button class="btn" id="clear">Clear</button>
+    </div>
+    <div id="out" class="grid"></div>
   </div>
-
-  <hr>
-
-  <h3>Income by Date Range</h3>
-  <p class="row">
-    <label>From: <input type="date" id="incomeStart"></label>
-    <label>To: <input type="date" id="incomeEnd"></label>
-    <button id="checkIncomeBtn">Check Income</button>
-  </p>
-  <p id="incomeRangeResult" style="font-weight:bold;"></p>
-
-  <p><a href="index.html">Back to Main Page</a></p>
-
-  <script>
-    async function loadSummary() {
-      const [paymentsRes, expensesRes] = await Promise.all([
-        fetch('/api/payments'), fetch('/api/expenses')
-      ]);
-      const payments = await paymentsRes.json();
-      const expenses = await expensesRes.json();
-
-      const totalIncome = (payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
-      const totalExpenses = (expenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-      const taxExp = (expenses || []).filter(e => Number(e.taxable) === 1).reduce((s, e) => s + (Number(e.amount) || 0), 0);
-      const nonTaxExp = totalExpenses - taxExp;
-      const net = totalIncome - totalExpenses;
-
-      const fmt = v => `$${(Number(v)||0).toFixed(2)}`;
-      document.getElementById('sumIncome').textContent = fmt(totalIncome);
-      document.getElementById('sumExpenses').textContent = fmt(totalExpenses);
-      document.getElementById('sumTaxExp').textContent = fmt(taxExp);
-      document.getElementById('sumNonTaxExp').textContent = fmt(nonTaxExp);
-      document.getElementById('sumNet').textContent = fmt(net);
-    }
-
-    // NEW: Check income between dates
-    (function () {
-      const btn = document.getElementById('checkIncomeBtn');
-      btn.addEventListener('click', async () => {
-        const s = document.getElementById('incomeStart').value;
-        const e = document.getElementById('incomeEnd').value;
-        const out = document.getElementById('incomeRangeResult');
-        if (!s || !e) { out.textContent = 'Please pick both dates.'; return; }
-        const r = await fetch(`/api/payments/total?start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}`);
-        const data = await r.json();
-        out.textContent = `Income from ${s} to ${e}: $${Number(data.total || 0).toFixed(2)}`;
-      });
-    })();
-
-    loadSummary();
-  </script>
-</body>
-</html>
+  <p><a href="index.html">Back to Main</a></p>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+function money(n){ return (n||0).toLocaleString(undefined,{style:'currency',currency:'USD'}); }
+async function run(){
+  const from = $('#from').value, to = $('#to').value;
+  const q = new URLSearchParams(); if(from) q.set('from',from); if(to) q.set('to',to);
+  const res = await fetch('/api/accounting/summary?'+q.toString());
+  const z = await res.json();
+  $('#out').innerHTML = `
+    <div class="card"><h2>Income</h2>
+      <p>Taxable: <b>${money(z.incomeTaxable)}</b></p>
+      <p>Non-Taxable: <b>${money(z.incomeNonTaxable)}</b></p>
+      <p>Total: <b>${money(z.incomeTotal)}</b></p>
+    </div>
+    <div class="card"><h2>Expenses</h2>
+      <p>Taxable: <b>${money(z.expenseTaxable)}</b></p>
+      <p>Non-Taxable: <b>${money(z.expenseNonTaxable)}</b></p>
+      <p>Total: <b>${money(z.expenseTotal)}</b></p>
+    </div>
+    <div class="card"><h2>Net</h2>
+      <p><b>${money(z.net)}</b></p>
+    </div>`;
+}
+document.getElementById('run').onclick = run;
+document.getElementById('clear').onclick = ()=>{ $('#from').value=''; $('#to').value=''; run(); };
+run();
+</script>
+</body></html>
