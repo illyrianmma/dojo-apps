@@ -4,8 +4,9 @@
 <link rel="stylesheet" href="main.css"/>
 </head><body><div class="container">
   <h1>Leads</h1>
+
   <div class="card">
-    <h2>Add Lead</h2>
+    <h2>Add / Edit Lead</h2>
     <div class="grid">
       <input id="name" placeholder="Name">
       <input id="phone" placeholder="Phone">
@@ -14,7 +15,7 @@
       <input id="follow_up_date" type="date" placeholder="Follow-up date">
     </div>
     <div class="toolbar">
-      <button class="btn btn-primary" id="addLead">Add Lead</button>
+      <button class="btn btn-primary" id="saveLead">Add Lead</button>
       <span class="badge" id="status"></span>
     </div>
   </div>
@@ -29,21 +30,22 @@
 
   <p><a href="index.html">Back to Main</a></p>
 </div>
-
 <script>
-const $ = s=>document.querySelector(s);
+const $ = s => document.querySelector(s);
 const api = (p,opt)=>fetch(p,opt).then(r=>r.ok?r.json():r.json().then(e=>Promise.reject(e)));
 
+let editingId = null;
+
 async function load(){
-  const data = await api('/api/leads');
-  const tb = document.querySelector('#leadsTable tbody'); tb.innerHTML='';
-  data.forEach(l=>{
-    const tr = document.createElement('tr');
+  const rows = await api("/api/leads");
+  const tb = document.querySelector("#leadsTable tbody"); tb.innerHTML = "";
+  rows.forEach(l=>{
+    const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${l.name||''}</td>
-      <td>${l.phone||''}</td>
-      <td>${l.interested_program||''}</td>
-      <td>${l.follow_up_date||''}</td>
+      <td>${l.name||""}</td>
+      <td>${l.phone||""}</td>
+      <td>${l.interested_program||""}</td>
+      <td>${l.follow_up_date||""}</td>
       <td>
         <button class="btn" data-act="edit" data-id="${l.id}">Edit</button>
         <button class="btn btn-danger" data-act="del" data-id="${l.id}">Delete</button>
@@ -52,42 +54,51 @@ async function load(){
     tb.appendChild(tr);
   });
 }
-document.querySelector('#leadsTable').addEventListener('click', async e=>{
-  const b = e.target.closest('button'); if(!b) return;
+
+document.querySelector("#leadsTable").addEventListener("click", async (e)=>{
+  const b = e.target.closest("button"); if (!b) return;
   const id = b.dataset.id, act = b.dataset.act;
   try{
-    if (act==='del'){ await api('/api/leads/'+id,{method:'DELETE'}); load(); }
-    else if (act==='edit'){
-      const l = await api('/api/leads/'+id);
-      for (const k of ['name','phone','email','interested_program','follow_up_date']){
-        const el = document.getElementById(k); if (el) el.value = l[k]||'';
-      }
-      document.getElementById('status').textContent = 'Editing ID '+id;
-      document.getElementById('addLead').dataset.editing = id;
-      document.getElementById('addLead').textContent = 'Save Lead';
-    } else if (act==='convert'){
-      await api(`/api/leads/${id}/convert`, { method:'POST' });
+    if (act==="edit"){
+      const l = await api("/api/leads/"+id);
+      ["name","phone","email","interested_program","follow_up_date"].forEach(k=>{
+        const el = document.getElementById(k); if (el) el.value = l[k]||"";
+      });
+      editingId = id;
+      $("#saveLead").textContent = "Save Lead";
+      $("#status").textContent = "Editing #"+id;
+    } else if (act==="del"){
+      await api("/api/leads/"+id, { method:"DELETE" });
       load();
-      alert('Lead converted to student.');
+    } else if (act==="convert"){
+      await api(`/api/leads/${id}/convert`, { method:"POST" });
+      load();
+      alert("Lead converted to student.");
     }
-  }catch(err){ alert(err.error||'Error'); }
+  }catch(err){
+    alert(err.error || "Action failed");
+  }
 });
-document.getElementById('addLead').onclick = async e=>{
-  const id = e.target.dataset.editing;
+
+document.getElementById("saveLead").onclick = async ()=>{
   const body = {
-    name: $('#name').value.trim(),
-    phone: $('#phone').value.trim(),
-    email: $('#email').value.trim(),
-    interested_program: $('#interested_program').value.trim(),
-    follow_up_date: $('#follow_up_date').value
+    name: $("#name").value.trim(),
+    phone: $("#phone").value.trim(),
+    email: $("#email").value.trim(),
+    interested_program: $("#interested_program").value.trim(),
+    follow_up_date: $("#follow_up_date").value
   };
-  const opt = { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) };
+  const opt = { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) };
   try{
-    if (id){ await api('/api/leads/'+id, { ...opt, method:'PUT' }); e.target.dataset.editing=''; e.target.textContent='Add Lead'; }
-    else { await api('/api/leads', opt); }
-    document.getElementById('status').textContent = 'Saved.';
+    if (editingId){
+      await api("/api/leads/"+editingId, { ...opt, method:"PUT" });
+      editingId = null; $("#saveLead").textContent = "Add Lead";
+    } else {
+      await api("/api/leads", opt);
+    }
+    $("#status").textContent = "Saved.";
     load();
-  }catch(err){ alert(err.error||'Error'); }
+  }catch(err){ alert(err.error || "Save failed"); }
 };
 
 load();

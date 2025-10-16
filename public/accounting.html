@@ -19,11 +19,11 @@
 const $=s=>document.querySelector(s);
 function money(n){ return (n||0).toLocaleString(undefined,{style:'currency',currency:'USD'}); }
 async function run(){
-  const from = $('#from').value, to = $('#to').value;
-  const q = new URLSearchParams(); if(from) q.set('from',from); if(to) q.set('to',to);
-  const res = await fetch('/api/accounting/summary?'+q.toString());
+  const from = $("#from").value, to = $("#to").value;
+  const q = new URLSearchParams(); if(from) q.set("from",from); if(to) q.set("to",to);
+  const res = await fetch("/api/accounting/summary?"+q.toString());
   const z = await res.json();
-  $('#out').innerHTML = `
+  $("#out").innerHTML = `
     <div class="card"><h2>Income</h2>
       <p>Taxable: <b>${money(z.incomeTaxable)}</b></p>
       <p>Non-Taxable: <b>${money(z.incomeNonTaxable)}</b></p>
@@ -38,8 +38,8 @@ async function run(){
       <p><b>${money(z.net)}</b></p>
     </div>`;
 }
-document.getElementById('run').onclick = run;
-document.getElementById('clear').onclick = ()=>{ $('#from').value=''; $('#to').value=''; run(); };
+document.getElementById("run").onclick = run;
+document.getElementById("clear").onclick = ()=>{ $("#from").value=""; $("#to").value=""; run(); };
 run();
 </script>
 </body></html>
