@@ -1,19 +1,19 @@
-﻿{
-    "name":  "dojo-apps",
-    "version":  "1.0.0",
-    "description":  "Martial arts school manager",
-    "main":  "server.js",
-    "scripts":  {
-                    "start":  "node server.js"
-                },
-    "author":  "James",
-    "license":  "ISC",
-    "engines":  {
-                    "node":  "20.x"
-                },
-    "dependencies":  {
-                         "express":  "^4.21.2",
-                         "multer":  "^2.0.2",
-                         "sqlite3":  "^5.1.7"
-                     }
+{
+    "name": "dojo-apps",
+    "version": "1.0.0",
+    "description": "Martial arts school manager",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "author": "James",
+    "license": "ISC",
+    "engines": {
+        "node": "20.x"
+    },
+    "dependencies": {
+        "express": "^4.19.2",
+        "multer": "^2.0.2",
+        "sqlite3": "^5.1.7"
+    }
 }
