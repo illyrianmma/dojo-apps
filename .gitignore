@@ -19,3 +19,5 @@ dojo.db
 public\uploads\
 backups\
 
+backup_*/
+server.backup.*.js
