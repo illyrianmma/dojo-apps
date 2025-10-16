@@ -1,27 +1,51 @@
 ﻿const fs = require("fs");
 const path = require("path");
 
-// Detect Render persistent disk mount (prefer /var/data, fallback to /data)
-const PERSIST_ROOT = process.env.DATA_DIR
-  || (fs.existsSync("/var/data") ? "/var/data"
-  : fs.existsSync("/data") ? "/data"
-  : "/opt/render/project/src"); // local fallback
+function isWritable(dir) {
+  try { fs.accessSync(dir, fs.constants.W_OK); return true; }
+  catch { return false; }
+}
 
-// Allow explicit env overrides; otherwise use PERSIST_ROOT
-const DATA_DIR    = process.env.DATA_DIR    || PERSIST_ROOT;
-const DB_PATH     = process.env.DOJO_DB     || path.join(DATA_DIR, "dojo.db");
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(DATA_DIR, "uploads");
+let DATA_DIR = null;
 
-// Make sure folders exist (no-op if already there)
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// Prefer env DATA_DIR if it exists and is writable
+if (process.env.DATA_DIR && fs.existsSync(process.env.DATA_DIR) && isWritable(process.env.DATA_DIR)) {
+  DATA_DIR = process.env.DATA_DIR;
+}
+// Else use /data if it exists and is writable (Render default mount)
+else if (fs.existsSync("/data") && isWritable("/data")) {
+  DATA_DIR = "/data";
+}
+// Else fall back to a local folder we can always create (ephemeral on Render)
+else {
+  DATA_DIR = path.join(process.cwd(), "data");
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  console.warn("[dojo] Using fallback DATA_DIR (ephemeral):", DATA_DIR);
+}
 
-// If a repo-level dojo.db exists (first deploy) and disk db doesn't, seed it once
-const repoDb = path.join(process.cwd(), "dojo.db");
+console.log("[dojo] DATA_DIR =", DATA_DIR);
+
+// DB path: use env if parent is writable, otherwise under DATA_DIR
+let DB_PATH = process.env.DOJO_DB || path.join(DATA_DIR, "dojo.db");
 try {
-  if (fs.existsSync(repoDb) && !fs.existsSync(DB_PATH)) {
-    fs.copyFileSync(repoDb, DB_PATH);
+  const parent = path.dirname(DB_PATH);
+  if (!(fs.existsSync(parent) && isWritable(parent))) throw new Error("db parent not writable");
+} catch {
+  DB_PATH = path.join(DATA_DIR, "dojo.db");
+}
+console.log("[dojo] DB_PATH  =", DB_PATH);
+
+// Uploads path: env only if parent is writable; otherwise under DATA_DIR
+let UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(DATA_DIR, "uploads");
+try {
+  const upParent = path.dirname(UPLOADS_DIR);
+  if (!(fs.existsSync(upParent) && isWritable(upParent))) {
+    UPLOADS_DIR = path.join(DATA_DIR, "uploads");
   }
-} catch (_) { /* ignore on read-only builds */ }
+} catch {
+  UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+}
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+console.log("[dojo] UPLOADS_DIR =", UPLOADS_DIR);
 
 module.exports = { DATA_DIR, DB_PATH, UPLOADS_DIR };
