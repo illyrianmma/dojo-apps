@@ -3,6 +3,10 @@ const fs = require('fs');
 const express = require('express');
 const path = require('path');
 const { DATA_DIR, DB_PATH, UPLOADS_DIR } = require('./persist');
+console.log('[dojo] DATA_DIR =', DATA_DIR);
+console.log('[dojo] DB_PATH  =', DB_PATH);
+console.log('[dojo] UPLOADS_DIR =', UPLOADS_DIR);
+
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
