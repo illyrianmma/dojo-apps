@@ -143,3 +143,37 @@ app.listen(PORT, () => {
 
 
 
+//
+// --- DIAG v20251017_113651 ---
+// Always-append diagnostics & compat routes.
+
+app.get('/students', (req, res) => {
+  // Compat list route for UI
+  const q = 'SELECT * FROM students ORDER BY id DESC';
+  db.all(q, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows || []);
+  });
+});
+
+app.get('/debug/db/students', (req, res) => {
+  db.all('SELECT * FROM students ORDER BY id DESC', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ count: (rows||[]).length, rows });
+  });
+});
+
+app.get('/debug/db/leads', (req, res) => {
+  db.all('SELECT * FROM leads ORDER BY id DESC', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ count: (rows||[]).length, rows });
+  });
+});
+
+app.get('/debug/db/tables', (req, res) => {
+  db.all("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows || []);
+  });
+});
+// --- END DIAG v20251017_113651 ---
