@@ -67,7 +67,7 @@ const fmt=a=> (a||0).toLocaleString(undefined,{style:'currency',currency:'CAD'})
 async function load(){
   const from = ($('#from').value||'').trim();
   const to   = ($('#to').value||'').trim();
-  const r = await fetch('/api/accounting/summary3?'+ new URLSearchParams({from,to}).toString());
+  const r = await fetch('/api/accounting/summary33?'+ new URLSearchParams({from,to}).toString());
   const j = await r.json();
 
   const m = j?.revenue?.by_method || {};
@@ -116,6 +116,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
+
 
 
 

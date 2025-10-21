@@ -519,3 +519,77 @@ app.get("/api/accounting/summary3", (req,res)=>{
   });
 });
 /* ---- end summary3 ---- */
+/* --- paymentsNormalize middleware (adds created_at, coerces amount/method) --- */
+app.use((req,res,next)=>{
+  try{
+    if (req.method === "POST" && /^\/api\/(?:students\/\d+\/)?payments/.test(req.path)) {
+      if (typeof req.body !== "object" || !req.body) req.body = {};
+      // amount -> number
+      if (typeof req.body.amount === "string") req.body.amount = Number(req.body.amount.trim() || "0");
+      if (typeof req.body.amount !== "number" || Number.isNaN(req.body.amount)) req.body.amount = 0;
+      // method -> known bucket
+      const m = (req.body.method||"other").toString().toLowerCase();
+      const ok = new Set(["cash","e-transfer","debit","credit","chq","other"]);
+      req.body.method = ok.has(m) ? m : "other";
+      // taxable -> 0/1
+      if (typeof req.body.taxable === "string") req.body.taxable = (req.body.taxable === "1" || /^true$/i.test(req.body.taxable)) ? 1 : 0;
+      if (typeof req.body.taxable !== "number") req.body.taxable = 0;
+      // created_at -> ISO if missing
+      if (!req.body.created_at) req.body.created_at = new Date().toISOString();
+      // if no explicit date, leave it null; the summary will fall back to created_at
+    }
+  }catch(_){}
+  next();
+});
+/* --- end paymentsNormalize --- */
+/* --- paymentsNormalize middleware (adds created_at, coerces amount/method) --- */
+app.use((req,res,next)=>{
+  try{
+    if (req.method === "POST" && /^\/api\/(?:students\/\d+\/)?payments/.test(req.path)) {
+      if (typeof req.body !== "object" || !req.body) req.body = {};
+      // amount -> number
+      if (typeof req.body.amount === "string") req.body.amount = Number(req.body.amount.trim() || "0");
+      if (typeof req.body.amount !== "number" || Number.isNaN(req.body.amount)) req.body.amount = 0;
+      // method -> known bucket
+      const m = (req.body.method||"other").toString().toLowerCase();
+      const ok = new Set(["cash","e-transfer","debit","credit","chq","other"]);
+      req.body.method = ok.has(m) ? m : "other";
+      // taxable -> 0/1
+      if (typeof req.body.taxable === "string") req.body.taxable = (req.body.taxable === "1" || /^true$/i.test(req.body.taxable)) ? 1 : 0;
+      if (typeof req.body.taxable !== "number") req.body.taxable = 0;
+      // created_at -> ISO if missing
+      if (!req.body.created_at) req.body.created_at = new Date().toISOString();
+      // if no explicit date, leave it null; the summary will fall back to created_at
+    }
+  }catch(_){}
+  next();
+});
+/* --- end paymentsNormalize --- */
+/* --- on-boot: ensure payments.created_at exists and is filled --- */
+(function ensurePaymentsCreatedAt(){
+  try{
+    const sqlite3 = require("sqlite3").verbose();
+    const db = new sqlite3.Database(DB_PATH);
+    db.serialize(()=>{
+      db.run(`CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY)`);
+      db.all(`PRAGMA table_info(payments)`, (err, cols)=>{
+        if (err) { console.error("[boot] payments info err:", err); db.close(); return; }
+        const has = (cols||[]).some(c => (c.name||"").toLowerCase()==="created_at");
+        const backfill = ()=> db.run(`UPDATE payments SET created_at = COALESCE(created_at, datetime('now'))`,
+          (e)=>{ if (e) console.error("[boot] payments backfill err:", e); db.close(); });
+        if (!has) db.run(`ALTER TABLE payments ADD COLUMN created_at TEXT`, (e)=>{ if (e) console.error("[boot] add created_at err:", e); backfill(); });
+        else backfill();
+      });
+    });
+  }catch(e){ console.error("[boot] ensurePaymentsCreatedAt failed:", e); }
+})();
+/* --- debug payments peek (last 10) --- */
+app.get("/api/debug/payments", (req,res)=>{
+  db.all(`SELECT id, student_id, amount, method, date, created_at
+          FROM payments
+          ORDER BY id DESC
+          LIMIT 10`, (e, rows)=>{
+    if (e) return res.status(500).json({error:String(e)});
+    res.json(rows||[]);
+  });
+});
