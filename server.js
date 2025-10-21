@@ -471,3 +471,51 @@ app.get("/api/accounting/summary", async (req,res)=>{
 
 
 
+/* ---- Accounting summary3: totals by date range using DATE(COALESCE(payments.date, payments.created_at)) ---- */
+app.get("/api/accounting/summary3", (req,res)=>{
+  const from = (req.query.from||"").trim();
+  const to   = (req.query.to||"").trim();
+
+  const payWhere = [];
+  const payArgs = [];
+  if (from) { payWhere.push("DATE(COALESCE(date, created_at, '1970-01-01')) >= DATE(?)"); payArgs.push(from); }
+  if (to)   { payWhere.push("DATE(COALESCE(date, created_at, '1970-01-01')) <= DATE(?)"); payArgs.push(to); }
+  const paySQLWhere = payWhere.length ? (" WHERE " + payWhere.join(" AND ")) : "";
+
+  const expWhere = [];
+  const expArgs = [];
+  if (from) { expWhere.push("date >= ?"); expArgs.push(from); }
+  if (to)   { expWhere.push("date <= ?"); expArgs.push(to); }
+  const expSQLWhere = expWhere.length ? (" WHERE " + expWhere.join(" AND ")) : "";
+
+  const out = { revenue:{ by_method:{}, total:0 }, expenses:{ by_vendor:[], total:0 }, net:0 };
+
+  db.serialize(()=>{
+    db.all(`SELECT COALESCE(method,'other') AS method, COALESCE(SUM(amount),0) AS total
+            FROM payments${paySQLWhere}
+            GROUP BY COALESCE(method,'other')`, payArgs, (e, rows)=>{
+      if (e) return res.status(500).json({error:String(e)});
+      (rows||[]).forEach(r=> out.revenue.by_method[r.method] = r.total||0);
+
+      db.get(`SELECT COALESCE(SUM(amount),0) AS total FROM payments${paySQLWhere}`, payArgs, (e2, row2)=>{
+        if (e2) return res.status(500).json({error:String(e2)});
+        out.revenue.total = row2?.total||0;
+
+        db.all(`SELECT vendor, COALESCE(SUM(amount),0) AS total
+                FROM expenses${expSQLWhere}
+                GROUP BY vendor`, expArgs, (e3, rows3)=>{
+          if (e3) return res.status(500).json({error:String(e3)});
+          out.expenses.by_vendor = rows3||[];
+
+          db.get(`SELECT COALESCE(SUM(amount),0) AS total FROM expenses${expSQLWhere}`, expArgs, (e4, row4)=>{
+            if (e4) return res.status(500).json({error:String(e4)});
+            out.expenses.total = row4?.total||0;
+            out.net = (out.revenue.total||0) - (out.expenses.total||0);
+            res.json(out);
+          });
+        });
+      });
+    });
+  });
+});
+/* ---- end summary3 ---- */
