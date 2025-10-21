@@ -1,131 +1,342 @@
-<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Students</title>
-<link rel="stylesheet" href="main.css"/>
-</head><body><div class="container">
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Students (v78)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <base target="_self">
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .version{font-size:.85rem;color:#555;margin-bottom:6px}
+    #msg{display:none;margin:12px 0;padding:10px;border-radius:10px;border:1px solid}
+    #msg.ok{background:#e8f5e9;border-color:#c8e6c9}
+    #msg.err{background:#ffebee;border-color:#ffcdd2}
+    .hidden{display:none}
+    .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    @media (max-width:700px){.row{grid-template-columns:1fr}}
+    .student{display:grid;grid-template-columns:110px 1fr;gap:12px;align-items:start;padding:10px;border:1px solid #eee;border-radius:14px;margin:10px 0;position:relative;border-left:8px solid #e0e0e0}
+    .student img{width:110px;height:110px;object-fit:cover;border-radius:12px;background:#f5f5f5}
+    .student.status-ok{border-left-color:#43a047}
+    .student.status-soon{border-left-color:#ffb300}
+    .student.status-due{border-left-color:#1e88e5}
+    .student.status-over{border-left-color:#e53935}
+    .badge{font-size:.75rem;padding:2px 8px;border-radius:999px;border:1px solid #ddd;margin-left:8px}
+    .badge.ok{background:#e8f5e9;border-color:#c8e6c9}
+    .badge.soon{background:#fff8e1;border-color:#ffe082}
+    .badge.due{background:#e3f2fd;border-color:#90caf9}
+    .badge.over{background:#ffebee;border-color:#ffcdd2}
+    .payments{border-left:3px solid #eee;margin-left:8px;padding-left:8px;margin-top:8px}
+    .small{font-size:.9rem;color:#555}
+  </style>
+</head>
+<body>
+  <div class="version">Students page <strong>v78</strong></div>
   <h1>Students</h1>
-  <div class="card">
-    <h2>Add / Edit Student</h2>
-    <div class="grid">
-      <input id="first_name" placeholder="First name">
-      <input id="last_name" placeholder="Last name">
-      <input id="phone" placeholder="Phone">
-      <input id="email" placeholder="Email">
-      <input id="program" placeholder="Program">
-      <input id="join_date" type="date" placeholder="Join date">
-      <input id="renewal_date" type="date" placeholder="Renewal date (+28d)">
-      <input id="address" placeholder="Address">
-      <input id="photo" placeholder="Photo URL (optional)">
-    </div>
-    <div class="toolbar">
-      <button class="btn btn-primary" id="saveStudent">Save Student</button>
-      <button class="btn" id="showActive">Show Active</button>
-      <button class="btn" id="showOld">Show Old</button>
-      <span class="badge" id="status"></span>
-    </div>
+  <div class="flex" style="gap:8px;flex-wrap:wrap">
+    <a class="card" href="index.html">⬅️ Back to Main</a>
+    <a id="goOld" class="card muted" href="old-students.html">Open Old Students Page</a>
+    <button id="filterActive">Active</button>
+    <button id="filterOld">Old</button>
+    <button id="filterAll" class="muted">All</button>
+    <span class="small">Color key: <span class="badge over">overdue</span> <span class="badge due">today</span> <span class="badge soon">1–7 days</span> <span class="badge ok">&gt;7 days</span></span>
   </div>
+  <div id="msg"></div>
+  <div id="editBanner" class="small" style="display:none;margin:6px 0;color:#1565c0"></div>
+  <div class="hr"></div>
 
-  <div class="card">
-    <h2 id="listTitle">Active Students</h2>
-    <table class="table" id="studentsTable">
-      <thead><tr><th>Photo</th><th>Name</th><th>Phone</th><th>Program</th><th>Join</th><th>Renewal</th><th>Actions</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  <h2>Add / Edit Student</h2>
 
-  <p><a href="index.html">Back to Main</a></p>
-</div>
-<script>
-const $ = s => document.querySelector(s);
-const api = (p,opt)=>fetch(p,opt).then(r=>r.ok?r.json():r.json().then(e=>Promise.reject(e)));
+  <form id="fallbackForm" action="/api/students" method="post" target="sink" enctype="multipart/form-data" class="section">
+    <input type="hidden" name="id" id="student_id" />
+    <div class="row">
+      <div><label>First Name</label><input required name="first_name" /></div>
+      <div><label>Last Name</label><input required name="last_name" /></div>
+      <div><label>Phone</label><input name="phone" /></div>
+      <div><label>Email</label><input type="email" name="email" /></div>
+      <div><label>Home Address</label><input name="address" /></div>
+      <div><label>Age</label><input type="number" min="0" name="age" /></div>
+      <div><label>Parent/Guardian</label><input name="parents_name" /></div>
+      <div>
+        <label>Program</label>
+        <select name="program">
+          <option value="">Select…</option>
+          <option>Boxing</option><option>kickboxing</option><option>bjj/wrestling</option><option>mma</option><option>kids</option>
+        </select>
+      </div>
+      <div>
+        <label>How did you find us?</label>
+        <select name="referral_source">
+          <option value="">Select…</option>
+          <option>facebook</option><option>instagram</option><option>sign outside</option><option>word of mouth</option>
+          <option value="archived">archived</option>
+        </select>
+      </div>
+      <div><label>Join Date</label><input type="date" name="join_date" id="join_date" /></div>
+      <div><label>Renewal Date</label><input type="date" name="renewal_date" id="renewal_date" /></div>
+      <div><label>Picture (camera or file)</label><input type="file" accept="image/*" capture="environment" name="picture"/></div>
+    </div>
+    <div class="flex" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+      <button type="submit" id="btnNoJs">Save (No-JS)</button>
+      <button type="button" id="btnReset1">Reset</button>
+      <button type="button" id="btnSaveJS">Save (JS)</button>
+    </div>
+    <p class="small">No-JS save stays on this page and shows a green message when done.</p>
+  </form>
 
-let showOld=false, editing=null;
+  <iframe id="sink" name="sink" style="display:none;width:0;height:0;border:0"></iframe>
 
-(function defaults(){
-  const fmt = d=>d.toISOString().slice(0,10);
-  const now = new Date();
-  $("#join_date").value = fmt(now);
-  const r = new Date(now); r.setDate(r.getDate()+28); $("#renewal_date").value = fmt(r);
-  $("#join_date").addEventListener("change", ()=>{
-    const d = new Date($("#join_date").value); if(!isNaN(d)){ d.setDate(d.getDate()+28); $("#renewal_date").value = fmt(d); }
-  });
-})();
+  <div class="hr"></div>
+  <h2>All Students</h2>
+  <div id="students" class="students"></div>
 
-async function load(){
-  const url = showOld ? "/api/students?is_active=0" : "/api/students?is_active=1";
-  const rows = await api(url);
-  const tb = document.querySelector("#studentsTable tbody"); tb.innerHTML = "";
-  rows.forEach(s=>{
-    const tr = document.createElement("tr");
-    const name = (s.first_name||"") + " " + (s.last_name||"");
-    const img = s.photo ? `<img class="student-photo" src="${s.photo}" alt="">` : "";
-    tr.innerHTML = `
-      <td>${img}</td>
-      <td>${name}</td>
-      <td>${s.phone||""}</td>
-      <td>${s.program||""}</td>
-      <td>${s.join_date||""}</td>
-      <td>${s.renewal_date||""}</td>
-      <td>
-        <button class="btn" data-act="edit" data-id="${s.id}">Edit</button>
-        <button class="btn btn-danger" data-act="del" data-id="${s.id}">Delete</button>
-        ${s.is_active?`<button class="btn btn-warn" data-act="archive" data-id="${s.id}">Archive</button>`:
-                        `<button class="btn btn-primary" data-act="restore" data-id="${s.id}">Restore</button>`}
-      </td>`;
-    tb.appendChild(tr);
-  });
-  $("#listTitle").textContent = showOld ? "Old Students" : "Active Students";
-}
+  <script>
+    const $=s=>document.querySelector(s);
+    const msg=$("#msg"), editBanner=$("#editBanner");
+    const todayISO = ()=> new Date().toISOString().slice(0,10);
+    const daysBetween = (a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+    function show(type, text){ msg.className=''; msg.classList.add(type==='error'?'err':'ok'); msg.textContent=text; msg.style.display='block'; }
+    function clearMsg(){ msg.style.display='none'; msg.textContent=''; }
+    function renewalStatus(renewal){ const t=todayISO(); const d=daysBetween(t,(renewal||t)); if(d>7) return 'ok'; if(d>0) return 'soon'; if(d===0) return 'due'; return 'over'; }
+    const badgeFor = (renewal)=>{ const s=renewalStatus(renewal); const t=todayISO(); const diff=daysBetween(t,(renewal||t)); const text=(s==='ok'||s==='soon')?`${diff}d until`:(s==='due')?'due today':`${Math.abs(diff)}d overdue`; return {cls:s,text}; };
+    const isArchived = s => (s.referral_source||"").toLowerCase()==="archived";
 
-document.getElementById("showActive").onclick = ()=>{ showOld=false; load(); };
-document.getElementById("showOld").onclick    = ()=>{ showOld=true;  load(); };
+    // API with robust payments
+    const api = {
+      list: ()=>fetch("/api/students?v="+Date.now(), {cache:"no-store"}).then(r=>r.json()),
+      one: id=>fetch("/api/students/"+id).then(r=>r.json()),
+      create: fd=>fetch("/api/students",{method:"POST", body:fd}).then(r=>r.json()),
+      update: (id,fd)=>fetch("/api/students/"+id,{method:"PUT", body:fd}).then(r=>r.json()),
+      del: id=>fetch("/api/students/"+id,{method:"DELETE"}).then(r=>r.json()),
 
-document.getElementById("studentsTable").addEventListener("click", async (e)=>{
-  const b = e.target.closest("button"); if(!b) return;
-  const id=b.dataset.id, act=b.dataset.act;
-  try{
-    if (act==="edit"){
-      const s = await api("/api/students/"+id); editing=id;
-      ["first_name","last_name","phone","email","program","join_date","renewal_date","address","photo"].forEach(k=>{
-        const el=document.getElementById(k); if (el) el.value = s[k]||"";
+      // Payments: try nested route, fallback to global
+      payList: async (id)=>{
+        let res = await fetch(`/api/students/${id}/payments`);
+        if(res.ok) return res.json();
+        const res2 = await fetch(`/api/payments?student_id=${encodeURIComponent(id)}`);
+        return res2.ok ? res2.json() : [];
+      },
+      payAdd: async (id, payload)=>{
+        // Try JSON to nested route
+        let r = await fetch(`/api/students/${id}/payments`,{ method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        if(r.ok) return r.json();
+        // Fallback: global /api/payments URL-encoded
+        const usp = new URLSearchParams({
+          student_id: id, amount: payload.amount ?? '', date: payload.date ?? '',
+          method: payload.method ?? '', note: payload.note ?? '', taxable: payload.taxable ? '1':'0'
+        });
+        r = await fetch(`/api/payments`, { method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body: usp.toString() });
+        return r.json();
+      }
+    };
+
+    // Default filter = Active
+    let filter='active';
+    $("#filterActive").onclick=()=>{filter='active'; render();};
+    $("#filterOld").onclick=()=>{filter='old'; render();};
+    $("#filterAll").onclick=()=>{filter='all'; render();};
+
+    function cardHTML(s){
+      const b=badgeFor(s.renewal_date || s.start_date || todayISO());
+      const img = s.picture_path? `<img src="${s.picture_path}" alt="photo">` : `<img alt="no photo">`;
+      const archived = isArchived(s);
+      return `
+        <div class="student status-${b.cls} ${archived?'archived':''}" data-id="${s.id}">
+          ${img}
+          <div>
+            <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+              <strong>${(s.first_name||'').trim()} ${(s.last_name||'').trim()}</strong>
+              <span class="badge ${b.cls}">${b.text}</span>
+              <span class="small">payments: ${s.payment_count||0}</span>
+            </div>
+            <div class="small">${s.program||""} • ${s.phone||""} • ${s.email||""}</div>
+            <div class="small">${s.address||""}</div>
+            <div class="small">Parent: ${s.parents_name||s.parent_name||"-"} • Found us: ${s.referral_source||"-"}</div>
+            <div class="small">Joined: ${s.join_date||s.start_date||""} • Renewal: ${s.renewal_date||""}</div>
+
+            <div class="flex" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+              <button data-a="edit">Edit</button>
+              <button data-a="del">Delete</button><button data-a="refund">Refund</button>
+              ${archived ? `<button data-a="restore">Restore</button>` : `<button data-a="archive">Move to Old</button>`}
+              <button data-a="pay">Payments</button>
+            </div>
+
+            <div class="payments hidden"></div>
+          </div>
+        </div>`;
+    }
+
+    async function render(){
+      const data = await api.list();
+      const arr = Array.isArray(data) ? data : (data.value||[]);
+      const filtered = arr.filter(s=>{
+        if(filter==='all') return true;
+        return filter==='old' ? isArchived(s) : !isArchived(s);
       });
-      $("#status").textContent = "Editing #"+id;
-    } else if (act==="del"){
-      await api("/api/students/"+id, { method:"DELETE" }); load();
-    } else if (act==="archive"){
-      await api(`/api/students/${id}/archive`, { method:"POST" }); load();
-    } else if (act==="restore"){
-      await api(`/api/students/${id}/restore`, { method:"POST" }); load();
+      $("#students").innerHTML = filtered.map(cardHTML).join("");
     }
-  }catch(err){ alert(err.error || "Action failed"); }
+
+    // Hidden-iframe handler for No-JS submit
+    const sink = document.getElementById('sink');
+    if (sink) {
+      sink.addEventListener('load', ()=>{
+        try{
+          const doc = sink.contentDocument || sink.contentWindow?.document;
+          const text = doc?.body?.innerText || '';
+          if (!text) return;
+          const json = JSON.parse(text);
+          if (json?.id){
+            show('ok','Saved (No-JS) student id '+json.id);
+            const f=document.getElementById('fallbackForm'); f.reset(); editBanner.style.display='none';
+            render();
+            document.querySelector('.student[data-id="'+json.id+'"]')?.scrollIntoView({behavior:'smooth', block:'center'});
+          }
+        }catch(e){}
+      });
+    }
+
+    // Save (JS)
+    document.getElementById("btnSaveJS").onclick = async ()=>{
+      clearMsg();
+      const f=document.getElementById("fallbackForm");
+      const fd=new FormData(f);
+      const id=(f.querySelector('[name="id"]').value||'').trim();
+      if(!fd.get("first_name")||!fd.get("last_name")){ show("error","First & Last Name are required."); return; }
+      if(!fd.get("join_date")) fd.set("join_date", todayISO());
+      if(!fd.get("renewal_date")) { const d=new Date(); d.setDate(d.getDate()+28); fd.set("renewal_date", d.toISOString().slice(0,10)); }
+      let res,json;
+      if(id){ res=await fetch(`/api/students/${id}`,{method:"PUT",body:fd}); }
+      else{ res=await fetch(`/api/students`,{method:"POST",body:fd}); }
+      json=await res.json().catch(()=>({error:"Invalid JSON",status:res.status}));
+      if(!res.ok||json?.error){ show("error","Save failed: "+(json.error||("HTTP "+res.status))); return; }
+      show("ok",(id?"Updated ":"Saved ")+"student id "+json.id);
+      editBanner.style.display='none'; f.reset(); await render();
+      document.querySelector('.student[data-id="'+json.id+'"]')?.scrollIntoView({behavior:"smooth",block:"center"});
+    };
+
+    // Card actions (Edit/Delete/Archive/Restore/Payments)
+    document.getElementById("students").addEventListener("click", async (e)=>{
+      const btn=e.target.closest("button"); if(!btn) return;
+      const card=e.target.closest(".student"); const id=card?.dataset.id; const a=btn.dataset.a;
+
+      if(a==="edit"){
+        const s = await api.one(id);
+        if(!s||s.error){ show("error","Student not found"); return; }
+        const f=document.getElementById("fallbackForm"); f.reset();
+        f.querySelector('[name="id"]').value=s.id;
+        ["first_name","last_name","phone","email","address","age","parents_name","program","referral_source","join_date","renewal_date"]
+          .forEach(k=>{ const el=f.querySelector('[name="'+k+'"]'); if(el) el.value=s[k]||""; });
+        editBanner.textContent=`Editing student #${s.id} (${(s.first_name||"").trim()} ${(s.last_name||"").trim()}) — click Save (JS) to update.`;
+        editBanner.style.display="block";
+        window.scrollTo({top:0,behavior:"smooth"});
+        show("ok","Loaded into form.");
+      }
+
+      if(a==="del"){
+        if(!confirm("Delete this student?")) return;
+        const r=await api.del(id);
+        if(r?.ok){ show("ok","Deleted."); render(); } else show("error","Delete failed");
+      }
+
+      if(a==="archive"){
+        const fd=new FormData(); fd.set("referral_source","archived");
+        const res=await fetch(`/api/students/${id}`,{method:"PUT",body:fd});
+        const r=await res.json().catch(()=>({error:"Invalid JSON",status:res.status}));
+        if(!res.ok||r?.error){ show("error","Move failed: "+(r?.error||("HTTP "+res.status))); return; }
+        location.replace("old-students.html?justArchived="+encodeURIComponent(id));
+        return;
+      }
+
+      if(a==="restore"){
+        const fd=new FormData(); fd.set("referral_source","");
+        const res=await fetch(`/api/students/${id}`,{method:"PUT",body:fd});
+        const r=await res.json().catch(()=>({error:"Invalid JSON",status:res.status}));
+        if(!res.ok||r?.error){ show("error","Restore failed: "+(r?.error||("HTTP "+res.status))); return; }
+        show("ok","Restored to Active."); await render();
+      }
+
+      if(a==="pay"){
+        const box=card.querySelector(".payments"); if(!box) return;
+        if(!box.classList.contains("hidden")){ box.classList.add("hidden"); return; }
+        const rows=await api.payList(id);
+        box.innerHTML = renderPayments(id, rows);
+        box.classList.remove("hidden");
+      }
+    });
+
+    function renderPayments(id, rows){
+      const list = (rows||[]).map(p=>`
+        <div class="flex" style="gap:8px;align-items:center">
+          <strong>$${Number(p.amount).toFixed(2)}</strong>
+          <span>${p.date||''}</span>
+          <span class="small">• ${p.method||"-"} • ${p.note||""}</span>
+        </div>`).join("") || '<div class="small">No payments yet.</div>';
+      return `
+        <div><strong>Payments</strong></div>
+        <div style="margin:6px 0">${list}</div>
+        <form data-pay="${id}" class="flex" style="gap:6px;flex-wrap:wrap">
+          <input type="number" step="0.01" min="0" required name="amount" placeholder="Amount" />
+          <input type="date" name="date" />
+          <select name="method"><option value="">method…</option><option>cash</option><option>debit</option><option>credit</option><option>e-transfer</option></select>
+          <input name="note" placeholder="Note"/>
+          <label class="small" style="display:flex;align-items:center;gap:6px"><input type="checkbox" name="taxable" checked/> Taxable</label>
+          <button>Add</button>
+        </form>`;
+    }
+
+    document.getElementById("students").addEventListener("submit", async (e)=>{
+      const form=e.target.closest("form[data-pay]"); if(!form) return; e.preventDefault();
+      const id=form.getAttribute("data-pay");
+      const fd=new FormData(form);
+      const payload={ amount:fd.get("amount"), date:fd.get("date")||undefined, method:fd.get("method")||undefined, note:fd.get("note")||undefined, taxable: fd.get("taxable")?1:0 };
+      const r=await api.payAdd(id, payload);
+      if(r?.id || r?.ok){ show("ok","Payment added."); const rows=await api.payList(id); form.closest(".payments").innerHTML=renderPayments(id, rows); await render(); }
+      else show("error","Payment failed: "+(r?.error||"unknown"));
+    });
+
+    document.getElementById('goOld')?.addEventListener('click', function(e){ e.preventDefault(); location.replace('old-students.html'); });
+
+    window.addEventListener("DOMContentLoaded", ()=>{
+      if(!document.getElementById("join_date").value) document.getElementById("join_date").value = todayISO();
+      if(!document.getElementById("renewal_date").value) { const d=new Date(); d.setDate(d.getDate()+28); document.getElementById("renewal_date").value=d.toISOString().slice(0,10); }
+      render();
+    });
+  </script>
+</body>
+</html>
+
+<!-- refundPatchV3 -->
+<script id="refundPatchV3">
+document.addEventListener('DOMContentLoaded', ()=>{
+  (document.getElementById('students') || document.body).addEventListener('click', async (ev)=>{
+    const btn = ev.target.closest('button[data-a="refund"]');
+    if (!btn) return;
+    const card = ev.target.closest('[data-id]');
+    if (!card) return;
+    const id = card.dataset.id;
+
+    let amt = prompt("Refund amount (positive number):","0.00");
+    if (amt===null) return;
+    amt = String(amt).trim();
+    if (!amt || isNaN(+amt) || +amt<=0) { alert("Enter a positive number."); return; }
+
+    let method = prompt("Refund method (cash / e-transfer / debit / credit / chq):","e-transfer");
+    if (method===null) return;
+    method = (method||'').trim().toLowerCase();
+    if (!method) method = 'other';
+
+    const note = prompt("Refund note (optional):","") || "";
+    const usp = new URLSearchParams({ amount:String(-Math.abs(+amt)), method, taxable:"0", note });
+
+    btn.disabled = true;
+    try{
+      const r = await fetch(`/api/students/${id}/payments`, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: usp.toString() });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || j?.error) { alert('Refund failed: ' + (j?.error || r.status)); btn.disabled=false; return; }
+      if (window.load) await load(); else location.reload();
+      alert("Refund recorded.");
+    } catch(e){ alert('Refund failed: '+(e?.message||e)); }
+    finally { btn.disabled = false; }
+  });
 });
-
-document.getElementById("saveStudent").onclick = async ()=>{
-  const body = {
-    first_name: $("#first_name").value.trim(),
-    last_name:  $("#last_name").value.trim(),
-    phone:      $("#phone").value.trim(),
-    email:      $("#email").value.trim(),
-    program:    $("#program").value.trim(),
-    join_date:  $("#join_date").value,
-    renewal_date: $("#renewal_date").value,
-    address:    $("#address").value.trim(),
-    photo:      $("#photo").value.trim(),
-    is_active:  1
-  };
-  const opt = { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) };
-  try{
-    if (editing){
-      await api("/api/students/"+editing, { ...opt, method:"PUT" });
-      editing = null; $("#status").textContent = "Saved.";
-    } else {
-      await api("/api/students", opt);
-      $("#status").textContent = "Added.";
-    }
-    load();
-  }catch(err){ alert(err.error || "Save failed"); }
-};
-
-load();
 </script>
-</body></html>
+

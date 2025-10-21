@@ -1,0 +1,134 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dojo Dashboard</title>
+  <link rel="stylesheet" href="styles.css?v=1" />
+
+</head>
+<body>
+  <h1>Dojo Dashboard</h1>
+  <p class="muted">Quick view of renewals, lead aging, and payment totals.</p>
+  <p>
+    <a class="btn" href="/index.html">Back to Main Menu</a>
+    <a class="btn" href="/admin-tools.html">Admin Tools (Backup/CSV)</a>
+  </p>
+
+  <div class="row">
+    <div class="card">
+      <h2>Renewals (Students)</h2>
+      <div class="muted">Rows in <b>red</b> are overdue. <b>Orange</b> are due within 3 days.</div>
+      <table id="studentsTbl">
+        <thead>
+          <tr>
+            <th>Name</th><th>Phone</th><th>Program</th>
+            <th>Start</th><th>Renewal</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="6" class="muted">Loadingâ€¦</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Leads Aging</h2>
+      <div class="muted">Rows turn <b>yellow</b> after 4 days and <b>red</b> after 14 days (until marked contacted).</div>
+      <table id="leadsTbl">
+        <thead>
+          <tr><th>Name</th><th>Phone</th><th>Email</th><th>Program</th><th>Age (days)</th></tr>
+        </thead>
+        <tbody><tr><td colspan="5" class="muted">Loadingâ€¦</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Payment Totals</h2>
+      <div class="muted">Taxable / Non-taxable / All</div>
+      <p>
+        <span class="pill">Taxable: $<span id="totTax">0.00</span></span>
+        <span class="pill">Non-Taxable: $<span id="totNon">0.00</span></span>
+        <span class="pill">All: $<span id="totAll">0.00</span></span>
+      </p>
+      <form id="sumForm">
+        <label class="muted">Filter (optional):</label><br/>
+        From <input type="date" id="from" /> To <input type="date" id="to" />
+        <button class="btn" type="submit">Refresh</button>
+      </form>
+    </div>
+  </div>
+
+<script>
+function esc(s){return String(s==null?"":s)}
+function setMoney(id,val){document.getElementById(id).textContent=(+val||0).toFixed(2)}
+
+async function loadStudents(){
+  const tb=document.querySelector("#studentsTbl tbody");
+  tb.innerHTML='<tr><td colspan="6" class="muted">Loadingâ€¦</td></tr>';
+  try{
+    const r=await fetch('/api/students'); const rows=await r.json();
+    if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="6" class="muted">No students</td></tr>';return;}
+    tb.innerHTML='';
+    rows.forEach(s=>{
+      const tr=document.createElement('tr');
+      if(s.due_status==='overdue') tr.classList.add('overdue');
+      else if(s.due_status==='due_soon') tr.classList.add('due_soon');
+      tr.innerHTML = `
+        <td>${esc(s.name)}</td>
+        <td>${esc(s.phone||'')}</td>
+        <td>${esc(s.program||'')}</td>
+        <td>${esc(s.start_date||'')}</td>
+        <td>${esc(s.renewal_date||'')}</td>
+        <td>${s.due_status||'ok'}</td>`;
+      tb.appendChild(tr);
+    });
+  }catch(e){tb.innerHTML='<tr><td colspan="6">Error loading students</td></tr>';}
+}
+
+async function loadLeads(){
+  const tb=document.querySelector("#leadsTbl tbody");
+  tb.innerHTML='<tr><td colspan="5" class="muted">Loadingâ€¦</td></tr>';
+  try{
+    const r=await fetch('/api/leads'); const rows=await r.json();
+    if(!Array.isArray(rows)||rows.length===0){tb.innerHTML='<tr><td colspan="5" class="muted">No leads</td></tr>';return;}
+    tb.innerHTML='';
+    rows.forEach(l=>{
+      const tr=document.createElement('tr');
+      const contacted = (l.status||'').toLowerCase()==='contacted';
+      if(!contacted){
+        if(l.age_days>=14) tr.classList.add('lead-danger');
+        else if(l.age_days>=4) tr.classList.add('lead-warn');
+      }
+      tr.innerHTML = `
+        <td>${esc(l.name)}</td>
+        <td>${esc(l.phone||'')}</td>
+        <td>${esc(l.email||'')}</td>
+        <td>${esc(l.interested_program||'')}</td>
+        <td>${esc(l.age_days||0)}</td>`;
+      tb.appendChild(tr);
+    });
+  }catch(e){tb.innerHTML='<tr><td colspan="5">Error loading leads</td></tr>';}
+}
+
+async function loadTotals(){
+  const qs=new URLSearchParams();
+  const f=document.getElementById('from').value;
+  const t=document.getElementById('to').value;
+  if(f) qs.set('from',f); if(t) qs.set('to',t);
+  try{
+    const r=await fetch('/api/payments/summary'+(qs.toString()?'?'+qs.toString():'')); 
+    const s=await r.json();
+    setMoney('totTax', s.taxable_total);
+    setMoney('totNon', s.nontax_total);
+    setMoney('totAll', s.grand_total);
+  }catch(e){/* ignore */}
+}
+
+document.getElementById('sumForm').addEventListener('submit', (e)=>{e.preventDefault(); loadTotals();});
+
+loadStudents();
+loadLeads();
+loadTotals();
+</script>
+</body>
+</html>
+

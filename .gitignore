@@ -1,23 +1,6 @@
-﻿# node / build
-node_modules/
-npm-debug.log*
-yarn.lock
-pnpm-lock.yaml
-
-# local data
+﻿dojo.db
 data/
-*.db
-
-# uploads
-public/uploads/
-
-# OS junk
-.DS_Store
-Thumbs.db
-
-dojo.db
-public\uploads\
-backups\
-
-backup_*/
-server.backup.*.js
+uploads/
+last-run.log
+*.log
+tiny.js

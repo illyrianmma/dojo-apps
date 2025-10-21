@@ -1,106 +1,399 @@
-<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Leads</title>
-<link rel="stylesheet" href="main.css"/>
-</head><body><div class="container">
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Leads — stable v1 + send-to-student delete</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Layout + small helpers */
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.35}
+    .flex{display:flex;gap:8px;flex-wrap:wrap}
+    .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    @media (max-width:900px){.row{grid-template-columns:1fr}}
+    input,select,textarea{width:100%;padding:8px;border:1px solid #dcdcdc;border-radius:8px}
+    label{display:block;margin-bottom:4px;font-size:.92rem;color:#333}
+    button{padding:8px 12px;border:1px solid #dcdcdc;border-radius:10px;background:#fff;cursor:pointer}
+    button:hover{background:#f6f6f6}
+    .small{font-size:.9rem;color:#555}
+    .hr{height:1px;background:#eee;margin:10px 0}
+    #msg{display:none;margin:10px 0;padding:10px;border-radius:10px;border:1px solid}
+    #msg.ok{background:#e8f5e9;border-color:#c8e6c9}
+    #msg.err{background:#ffebee;border-color:#ffcdd2}
+
+    /* Cards + inline color bars (status = left, urgency = top) */
+    .leads{display:grid;gap:10px}
+    .lead{ position:relative; border:1px solid #e5e7eb; border-radius:14px; padding:10px 10px 10px 12px; background:#fff; overflow:hidden; }
+    .lead .bar-left{ position:absolute; left:0; top:0; bottom:0; width:8px; background:#9e9e9e; } /* default gray */
+    .lead .bar-top{ position:absolute; left:0; top:0; right:0; height:4px; background:transparent; }
+    .status-pill{ display:inline-block; margin-left:6px; padding:2px 8px; border-radius:999px; font-size:.75rem; color:#fff; vertical-align:middle; background:#9e9e9e }
+
+    /* Mini calendar (~2x2") */
+    .cal-wrap{ width:220px; float:right; margin:0 0 10px 10px; padding:6px; border:1px solid #eee; border-radius:10px }
+    .cal-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:4px }
+    .cal-head .title{ font-size:.78rem }
+    .cal-controls button{ padding:2px 6px; font-size:.75rem }
+    .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px }
+    .cal-dow{ font-size:.65rem; text-align:center; color:#666 }
+    .cal-day{ border:1px solid #eee; border-radius:10px; min-height:26px; padding:2px; background:#fff; cursor:pointer; position:relative }
+    .cal-day.muted{ background:#fafafa; color:#aaa }
+    .cal-day.today{ outline:2px solid #1565c0 }
+    .cal-day.selected{ box-shadow:0 0 0 2px #1565c0 inset }
+    .cal-date{ font-size:.65rem; font-weight:600 }
+    .cal-badge{ position:absolute; right:2px; bottom:2px; font-size:.6rem; background:#1565c0; color:#fff; padding:1px 4px; border-radius:999px }
+    #calList{ display:none } /* keep it mini */
+  </style>
+</head>
+<body>
   <h1>Leads</h1>
-
-  <div class="card">
-    <h2>Add / Edit Lead</h2>
-    <div class="grid">
-      <input id="name" placeholder="Name">
-      <input id="phone" placeholder="Phone">
-      <input id="email" placeholder="Email">
-      <input id="interested_program" placeholder="Interested Program">
-      <input id="follow_up_date" type="date" placeholder="Follow-up date">
-    </div>
-    <div class="toolbar">
-      <button class="btn btn-primary" id="saveLead">Add Lead</button>
-      <span class="badge" id="status"></span>
-    </div>
+  <div class="flex" style="margin-bottom:8px">
+    <a class="card" href="index.html">⬅️ Back to Main</a>
   </div>
 
-  <div class="card">
-    <h2>Leads List</h2>
-    <table class="table" id="leadsTable">
-      <thead><tr><th>Name</th><th>Phone</th><th>Program</th><th>Follow-up</th><th>Actions</th></tr></thead>
-      <tbody></tbody>
-    </table>
+  <div id="msg"></div>
+  <div class="hr"></div>
+
+  <!-- Form -->
+  <form id="leadForm" class="section" autocomplete="off">
+    <input type="hidden" name="id" id="lead_id" />
+    <div class="row">
+      <div><label>First Name</label><input required name="first_name" /></div>
+      <div><label>Family Name</label><input required name="last_name" /></div>
+      <div><label>Phone #</label><input name="phone" /></div>
+      <div><label>Email</label><input type="email" name="email" /></div>
+
+      <div>
+        <label>Date Entered</label>
+        <input type="date" name="date_entered" id="date_entered"/>
+      </div>
+
+      <div>
+        <label>Call-back Date</label>
+        <input type="date" name="follow_up_date" id="follow_up_date"/>
+      </div>
+
+      <div>
+        <label>Source</label>
+        <select name="source" id="lead_source">
+          <option value="" class="placeholder" selected>-- Select source --</option>
+          <option>Facebook</option><option>Instagram</option><option>Google</option>
+          <option>Sign</option><option>Word of mouth</option><option>Referral</option><option>Other</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Status</label>
+        <select name="status" id="lead_status">
+          <option value="" class="placeholder" selected>-- Select status --</option>
+          <option>new</option><option>contacted</option><option>trial</option><option>enrolled</option><option>lost</option>
+        </select>
+      </div>
+
+      <div style="grid-column:1 / -1">
+        <label>Interested Program</label>
+        <select name="interested_program" id="interested_program">
+          <option value="" selected>-- Select program --</option>
+          <option>kids class</option>
+          <option>boxing</option>
+          <option>kickboxing</option>
+          <option>bjj/wrestling</option>
+          <option>mma</option>
+          <option>streetwise selfdefense</option>
+        </select>
+      </div>
+
+      <div style="grid-column:1 / -1">
+        <label>Notes (internal)</label>
+        <textarea name="notes" rows="3" placeholder="Optional internal notes"></textarea>
+      </div>
+    </div>
+
+    <div class="flex" style="margin-top:8px">
+      <button type="submit">Save Lead</button>
+      <button type="button" id="resetBtn">Reset</button>
+      <button type="button" id="todayBtn" title="Set call-back to today">Today</button>
+      <button type="button" id="plus7Btn" title="Set call-back +7 days">+7 days</button>
+    </div>
+  </form>
+
+  <!-- Mini Calendar -->
+  <h2 style="margin-top:18px">Follow-ups Calendar</h2>
+  <div class="cal-wrap">
+    <div class="cal-head">
+      <div class="cal-controls flex">
+        <button id="prevMonth">◀ Prev</button>
+        <button id="todayMonth">Today</button>
+        <button id="nextMonth">Next ▶</button>
+      </div>
+      <div class="title" id="calTitle">Month YYYY</div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-list" id="calList"></div>
   </div>
 
-  <p><a href="index.html">Back to Main</a></p>
-</div>
+  <h2>All Leads</h2>
+  <div id="leads" class="leads"></div>
+
 <script>
-const $ = s => document.querySelector(s);
-const api = (p,opt)=>fetch(p,opt).then(r=>r.ok?r.json():r.json().then(e=>Promise.reject(e)));
+const $=s=>document.querySelector(s);
+const msg=$("#msg");
+function show(type, text){ msg.className=''; msg.classList.add(type==='error'?'err':'ok'); msg.textContent=text; msg.style.display='block'; }
 
-let editingId = null;
+/* API talking ONLY the columns the server knows: name, phone, email, interested_program, source, follow_up_date, status, notes */
+const api = {
+  list: ()=>fetch('/api/leads').then(r=>r.json()),
+  create: async (obj)=>{
+    const usp = new URLSearchParams(obj);
+    let r = await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:usp.toString()});
+    if(r.ok) return r.json();
+    return fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(x=>x.json());
+  },
+  update: async (id,obj)=>{
+    const usp = new URLSearchParams(obj);
+    let r = await fetch('/api/leads/'+id,{method:'PUT',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:usp.toString()});
+    if(r.ok) return r.json();
+    return fetch('/api/leads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(x=>x.json());
+  },
+  del: id => fetch('/api/leads/'+id,{method:'DELETE'}).then(r=>r.json())
+};
 
-async function load(){
-  const rows = await api("/api/leads");
-  const tb = document.querySelector("#leadsTable tbody"); tb.innerHTML = "";
-  rows.forEach(l=>{
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${l.name||""}</td>
-      <td>${l.phone||""}</td>
-      <td>${l.interested_program||""}</td>
-      <td>${l.follow_up_date||""}</td>
-      <td>
-        <button class="btn" data-act="edit" data-id="${l.id}">Edit</button>
-        <button class="btn btn-danger" data-act="del" data-id="${l.id}">Delete</button>
-        <button class="btn btn-primary" data-act="convert" data-id="${l.id}">Convert → Student</button>
-      </td>`;
-    tb.appendChild(tr);
+/* Colors: Status (left bar + pill) */
+function statusColor(status){
+  const s = String(status||'').toLowerCase().trim();
+  if (s==='contacted') return '#1565c0';   // blue
+  if (s==='trial')     return '#7e57c2';   // purple
+  if (s==='enrolled')  return '#2e7d32';   // green
+  if (s==='lost')      return '#c62828';   // red
+  return '#9e9e9e';                        // new/default gray
+}
+
+/* Colors: Urgency (top bar) per your spec */
+function dueColor(dateStr, status){
+  if(String(status||'').toLowerCase()==='lost') return '#c62828';
+  if(!dateStr) return 'transparent';
+  const d = new Date(dateStr+'T00:00:00');
+  const t = new Date(); t.setHours(0,0,0,0);
+  const days = Math.round((d - t)/86400000);
+  if (days <= 3)  return '#ef6c00'; // 1–3 days
+  if (days <= 7)  return '#7cb342'; // ≤1 week
+  if (days <= 14) return '#009688'; // ≤2 weeks
+  if (days <= 30) return '#546e7a'; // ≤1 month
+  return 'transparent';
+}
+
+/* Rendering */
+let cache = [];
+let calYear, calMonth;
+let selectedDate = null;
+
+function ymd(d){ return d.toISOString().slice(0,10); }
+function setFormValue(name, value){
+  const el = document.querySelector(`[name="${name}"]`);
+  if (!el) return;
+  if (el.tagName === 'SELECT') {
+    if (value && ![...el.options].some(o=>o.value===value)) {
+      const opt = document.createElement('option'); opt.value=value; opt.textContent=value; el.appendChild(opt);
+    }
+    el.value = value || '';
+  } else {
+    el.value = value || '';
+  }
+}
+
+function card(l){
+  const dataAttrs = [
+    ['id', l.id], ['name', l.name||''], ['phone', l.phone||''], ['email', l.email||''],
+    ['interested_program', l.interested_program||''], ['source', l.source||''],
+    ['follow_up_date', l.follow_up_date||''], ['status', l.status||''], ['notes', l.notes||'']
+  ].map(([k,v])=>`data-${k}="${String(v??'').replace(/"/g,'&quot;')}"`).join(' ');
+
+  const statusText = (l.status && String(l.status).trim()) ? String(l.status).trim() : 'new';
+  const sColor = statusColor(statusText);
+  const dColor = dueColor(l.follow_up_date||'', statusText);
+  const pillCSS  = 'display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:.75rem;color:#fff;vertical-align:middle;';
+
+  return `<div class="lead" ${dataAttrs}>
+    <div class="bar-left" style="background:${sColor}"></div>
+    <div class="bar-top"  style="background:${dColor}"></div>
+
+    <div><strong>${l.name||''}</strong>
+      <span class="status-pill" style="${pillCSS};background:${sColor}">${statusText}</span>
+    </div>
+    <div class="small">${l.phone||''} • ${l.email||''}</div>
+    <div class="small">
+      Interested: ${l.interested_program||'-'}
+      ${l.source? ' • Source: '+l.source : ''}
+      ${l.follow_up_date? ' • Call-back: '+l.follow_up_date : ''}
+    </div>
+    ${l.notes ? `<div class="small">Notes: ${l.notes}</div>` : ''}
+    <div class="flex" style="margin-top:8px">
+      <button data-a="edit">Edit</button>
+      <button data-a="del">Delete</button>
+      <button data-a="to-student">Send to Student</button>
+    </div>
+  </div>`;
+}
+
+async function render(){
+  $('#leads').innerHTML = (cache||[]).map(card).join('');
+}
+
+/* Mini Calendar */
+function daysMatrix(y,m){
+  const first = new Date(y,m,1);
+  const start = new Date(first); start.setDate(first.getDate() - ((first.getDay()+6)%7)); // Monday-first
+  const matrix=[], cur=new Date(start);
+  for(let w=0; w<6; w++){ const row=[]; for(let d=0; d<7; d++){ row.push(new Date(cur)); cur.setDate(cur.getDate()+1); } matrix.push(row); }
+  return matrix;
+}
+function renderCalendar(){
+  const grid = $('#calGrid'); const title = $('#calTitle');
+  const now = new Date(); if (calYear==null){ calYear = now.getFullYear(); calMonth = now.getMonth(); }
+  const matrix = daysMatrix(calYear, calMonth);
+
+  const counts={}; (cache||[]).forEach(l=>{ const d=(l.follow_up_date||'').trim(); if(d) counts[d]=(counts[d]||0)+1; });
+
+  grid.innerHTML = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  matrix.forEach(week=>{
+    week.forEach(d=>{
+      const inMonth=(d.getMonth()===calMonth), dd=ymd(d);
+      const isToday = dd === ymd(new Date());
+      const isSel   = selectedDate && dd===selectedDate;
+      grid.innerHTML += `<div class="cal-day ${inMonth?'':'muted'} ${isToday?'today':''} ${isSel?'selected':''}" data-date="${dd}">
+        <div class="cal-date">${d.getDate()}</div>
+        ${counts[dd] ? `<div class="cal-badge">${counts[dd]}</div>` : ''}
+      </div>`;
+    });
+  });
+  title.textContent = new Date(calYear, calMonth, 1).toLocaleString(undefined, {month:'long', year:'numeric'});
+  grid.querySelectorAll('.cal-day').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      selectedDate = el.dataset.date;
+      $('#follow_up_date').value = selectedDate;
+      show('ok','Call-back date set: '+selectedDate);
+      renderCalendar();
+    });
   });
 }
 
-document.querySelector("#leadsTable").addEventListener("click", async (e)=>{
-  const b = e.target.closest("button"); if (!b) return;
-  const id = b.dataset.id, act = b.dataset.act;
-  try{
-    if (act==="edit"){
-      const l = await api("/api/leads/"+id);
-      ["name","phone","email","interested_program","follow_up_date"].forEach(k=>{
-        const el = document.getElementById(k); if (el) el.value = l[k]||"";
+/* Load + Interactions */
+async function load(){ cache = await api.list() || []; await render(); renderCalendar(); }
+$('#leads').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  const card = e.target.closest('.lead'); if(!card) return;
+  const id = card.dataset.id; const a = btn.dataset.a;
+
+  if (a === 'edit') {
+    const f = $('#leadForm'); f.reset();
+    // Split name into first/family for editing convenience
+    const full = (card.dataset.name||'').trim();
+    const sp = full.split(/\s+/); const first = sp.shift()||''; const last = sp.join(' ');
+    setFormValue('first_name', first);
+    setFormValue('last_name', last);
+    setFormValue('phone', card.dataset.phone||'');
+    setFormValue('email', card.dataset.email||'');
+    setFormValue('date_entered', (card.dataset.notes||'').match(/date_entered:([0-9-]+)/)?.[1] || '');
+    setFormValue('follow_up_date', card.dataset.follow_up_date||'');
+    setFormValue('source', card.dataset.source||'');
+    setFormValue('status', card.dataset.status||'');
+    setFormValue('interested_program', card.dataset.interested_program||'');
+    $('input[name="id"]').value = id;
+    window.scrollTo({top:0,behavior:'smooth'}); show('ok','Loaded into form');
+
+  } else if (a === 'del') {
+    if(!confirm('Delete lead?')) return;
+    const r = await api.del(id); if (r?.ok){ show('ok','Deleted.'); await load(); } else { show('error','Delete failed'); }
+
+  } else if (a === 'to-student') {
+    // Create student from this lead, then remove the lead and refresh
+    btn.disabled = true;
+    try {
+      const full = (card.dataset.name||'').trim();
+      const parts = full.split(/\s+/);
+      const first = parts.shift() || '';
+      const last  = parts.join(' ');
+      const program = (card.dataset.interested_program||'').trim();
+
+      const usp = new URLSearchParams({
+        first_name: first,
+        last_name:  last,
+        phone:      card.dataset.phone || '',
+        email:      card.dataset.email || '',
+        program:    program || ''
       });
-      editingId = id;
-      $("#saveLead").textContent = "Save Lead";
-      $("#status").textContent = "Editing #"+id;
-    } else if (act==="del"){
-      await api("/api/leads/"+id, { method:"DELETE" });
-      load();
-    } else if (act==="convert"){
-      await api(`/api/leads/${id}/convert`, { method:"POST" });
-      load();
-      alert("Lead converted to student.");
+
+      const resp = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: usp.toString()
+      });
+      const j = await resp.json().catch(()=> ({}));
+      if (!resp.ok || !j || !j.id) {
+        show('error', 'Send failed: ' + (j?.error || 'unknown response'));
+        btn.disabled = false;
+        return;
+      }
+
+      // Delete the lead (best-effort), then refresh
+      await fetch('/api/leads/' + id, { method: 'DELETE' }).catch(()=>{});
+      show('ok', 'Sent to Students and removed from Leads.');
+      await load();
+    } catch(e){
+      show('error','Send failed: ' + (e?.message || e));
+    } finally {
+      btn.disabled = false;
     }
-  }catch(err){
-    alert(err.error || "Action failed");
   }
 });
 
-document.getElementById("saveLead").onclick = async ()=>{
-  const body = {
-    name: $("#name").value.trim(),
-    phone: $("#phone").value.trim(),
-    email: $("#email").value.trim(),
-    interested_program: $("#interested_program").value.trim(),
-    follow_up_date: $("#follow_up_date").value
-  };
-  const opt = { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) };
-  try{
-    if (editingId){
-      await api("/api/leads/"+editingId, { ...opt, method:"PUT" });
-      editingId = null; $("#saveLead").textContent = "Add Lead";
-    } else {
-      await api("/api/leads", opt);
-    }
-    $("#status").textContent = "Saved.";
-    load();
-  }catch(err){ alert(err.error || "Save failed"); }
-};
+$('#leadForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const id = (fd.get('id')||'').trim();
 
-load();
+  const first = (fd.get('first_name')||'').trim();
+  const last  = (fd.get('last_name')||'').trim();
+  const name  = (first + ' ' + last).trim();
+
+  // Persist only supported columns
+  const obj = {
+    name,
+    phone: (fd.get('phone')||'').trim(),
+    email: (fd.get('email')||'').trim(),
+    interested_program: (fd.get('interested_program')||'').trim(),
+    source: (fd.get('source')||'').trim(),
+    follow_up_date: (fd.get('follow_up_date')||'').trim(),
+    status: (fd.get('status')||'').trim() || 'new',
+    // pack date_entered into notes to stay compatible with DB schema
+    notes: (()=>{
+      const de = (fd.get('date_entered')||'').trim();
+      const extra = (fd.get('notes')||'').trim();
+      return (de ? `date_entered:${de}` : '') + (extra ? (de? ' ':'') + extra : '');
+    })()
+  };
+
+  const r = id ? await api.update(id, obj) : await api.create(obj);
+  if (r?.error) return show('error','Save failed: '+r.error);
+  show('ok', id ? 'Updated.' : 'Saved.');
+  e.target.reset(); e.target.querySelector('[name="id"]').value='';
+  // default date_entered after reset
+  $('#date_entered').value = ymd(new Date());
+  await load();
+});
+
+$('#resetBtn').onclick = ()=>{ const f=$('#leadForm'); f.reset(); f.querySelector('[name="id"]').value=''; $('#date_entered').value = ymd(new Date()); msg.style.display='none'; };
+$('#todayBtn').onclick = ()=>{ const d=new Date(); $('#follow_up_date').value = ymd(d); show('ok','Call-back set to today'); };
+$('#plus7Btn').onclick = ()=>{ const d=new Date(); d.setDate(d.getDate()+7); $('#follow_up_date').value = ymd(d); show('ok','Call-back set to +7 days'); };
+
+$('#prevMonth').onclick = ()=>{ const d=new Date(calYear,calMonth,1); d.setMonth(d.getMonth()-1); calYear=d.getFullYear(); calMonth=d.getMonth(); renderCalendar(); };
+$('#nextMonth').onclick = ()=>{ const d=new Date(calYear,calMonth,1); d.setMonth(d.getMonth()+1); calYear=d.getFullYear(); calMonth=d.getMonth(); renderCalendar(); };
+$('#todayMonth').onclick = ()=>{ const n=new Date(); calYear=n.getFullYear(); calMonth=n.getMonth(); selectedDate=ymd(n); renderCalendar(); };
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  // Default Date Entered = today
+  $('#date_entered').value = ymd(new Date());
+  await load();
+});
 </script>
-</body></html>
+</body>
+</html>

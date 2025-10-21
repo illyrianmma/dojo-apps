@@ -1,0 +1,67 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Student Payments</title>
+  <style>
+    body{font-family:sans-serif;max-width:900px;margin:2rem auto}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #ccc;padding:6px;vertical-align:top}
+    h2{margin-top:1.5rem}
+    .month{background:#f5faff}
+  </style>
+</head>
+<body>
+  <h1>Student Payments</h1>
+  <p><a href="students.html">Back to Students</a> | <a href="payments.html">All Payments</a></p>
+
+  <div id="summary"></div>
+  <div id="months"></div>
+
+  <script>
+    const u = new URL(location.href);
+    const studentId = u.searchParams.get('student_id');
+    let idToName = new Map();
+
+    function monthName(m){ return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m)-1]||m; }
+
+    async function loadStudentName(){
+      const s = await (await fetch('/api/students/'+studentId)).json();
+      const name = (s.first_name||'')+' '+(s.last_name||'');
+      document.getElementById('summary').innerHTML = `<h2>${name}</h2>`;
+    }
+
+    async function loadMonthly(){
+      const monthsDiv = document.getElementById('months'); monthsDiv.innerHTML='';
+      const monthly = await (await fetch('/api/payments/by-student/'+studentId+'/monthly')).json();
+      const rows = Array.isArray(monthly.rows)?monthly.rows:[];
+      if(!rows.length){ monthsDiv.innerHTML = '<p>No payments recorded.</p>'; return; }
+
+      // For each (y,m), fetch detailed rows for that month to show under the total
+      for (const r of rows){
+        const ymStart = `${r.y}-${r.m}-01`;
+        const mInt = Number(r.m);
+        const nextMonth = mInt===12 ? `${Number(r.y)+1}-01-01` : `${r.y}-${String(mInt+1).padStart(2,'0')}-01`;
+        const list = await (await fetch(`/api/payments?student_id=${encodeURIComponent(studentId)}`)).json();
+        const inMonth = list.filter(p => p.date && p.date >= ymStart && p.date < nextMonth);
+
+        const wrap = document.createElement('div');
+        wrap.className='month';
+        let html = `<h2>${monthName(r.m)} ${r.y} — Total: $${Number(r.total||0).toFixed(2)}</h2>`;
+        html += `<table><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Taxable</th></tr></thead><tbody>`;
+        inMonth.forEach(p=>{
+          html += `<tr><td>${p.date||''}</td><td>$${Number(p.amount||0).toFixed(2)}</td><td>${p.method||''}</td><td>${Number(p.taxable)?'Yes':'No'}</td></tr>`;
+        });
+        html += `</tbody></table>`;
+        wrap.innerHTML = html;
+        monthsDiv.appendChild(wrap);
+      }
+    }
+
+    if (!studentId) {
+      document.getElementById('summary').innerHTML = '<p style="color:red">Missing student_id in URL.</p>';
+    } else {
+      loadStudentName().then(loadMonthly);
+    }
+  </script>
+</body>
+</html>

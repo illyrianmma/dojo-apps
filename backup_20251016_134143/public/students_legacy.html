@@ -1,0 +1,67 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Old Students Page</title>
+  <style>
+    body{font-family:sans-serif;max-width:900px;margin:2rem auto}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #ccc;padding:6px}
+    tr.highlight td{background:#fff7cc;}
+    a.btn,button.btn{display:inline-block;padding:.25rem .5rem;border:1px solid #aaa;border-radius:4px;text-decoration:none;color:#000;margin:0 .2rem;background:#f7f7f7;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h1>Old Students Page</h1>
+  <p><a class="btn" href="students.html">Back to New Students</a> <a class="btn" href="index.html">Main</a></p>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Phone</th><th>Program</th><th>Start</th><th>Renewal</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="body"></tbody>
+  </table>
+
+  <script>
+    async function load(){
+      const res = await fetch('/api/students?legacy=true');
+      const list = await res.json();
+      const tb = document.getElementById('body'); tb.innerHTML = '';
+
+      const u = new URL(location.href);
+      const targetId = u.searchParams.get('id'); // optional
+      let targetRow = null;
+
+      (list||[]).forEach(s=>{
+        const tr = document.createElement('tr');
+        tr.dataset.id = String(s.id);
+        const newLink = `students.html?id=${encodeURIComponent(s.id)}`;
+        tr.innerHTML = `
+          <td>${s.id}</td>
+          <td>${s.first_name||''} ${s.last_name||''}</td>
+          <td>${s.phone||''}</td>
+          <td>${s.program||''}</td>
+          <td>${s.start_date||''}</td>
+          <td>${s.renewal_date||''}</td>
+          <td>
+            <a class="btn" href="${newLink}">New View</a>
+            <button class="btn return-new" data-id="${s.id}">Return to New</button>
+          </td>
+        `;
+        if (targetId && String(s.id) === String(targetId)) { tr.classList.add('highlight'); targetRow = tr; }
+        tb.appendChild(tr);
+      });
+
+      if (targetRow) targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    document.addEventListener('click', async (e)=>{
+      if (e.target.matches('.return-new')) {
+        const id = e.target.dataset.id;
+        const r = await fetch('/api/students/'+id+'/legacy', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ is_legacy:false }) });
+        if (r.ok) load(); else alert('Error returning to new');
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

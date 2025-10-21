@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Attendance v7</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 760px; margin: 2rem auto; }
+    h1 small { color:#666; font-weight: normal; font-size: 0.7em; }
+    label { display:inline-block; margin:0.25rem 0.5rem 0.25rem 0; }
+    input, select, button { margin:0.25rem; }
+    table { width:100%; border-collapse: collapse; margin-top:1rem; }
+    th, td { border:1px solid #ccc; padding:0.5rem; text-align:left; }
+    #err { color:#b00020; min-height:1.25rem; }
+    .hint { color:#666; font-size:0.9rem; }
+    .row { display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem; }
+    .row > * { flex:0 0 auto; }
+    .muted { color:#666; }
+    #debug { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#f7f7f7; border:1px solid #ddd; padding:0.5rem; border-radius:6px; margin-top:0.75rem; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Attendance <small>(v7)</small></h1>
+  <div id="err"></div>
+  <p><a href="index.html">Back to Main Page</a></p>
+
+  <div class="row">
+    <label for="att_date">Date (YYYY-MM-DD):</label>
+    <input type="text" id="att_date" placeholder="YYYY-MM-DD" inputmode="numeric" maxlength="10" autocomplete="off" />
+    <button id="todayBtn" type="button">Today</button>
+    <span class="hint">You can type directly in this box.</span>
+  </div>
+
+  <div class="row">
+    <label for="student_select">Student (name):</label>
+    <select id="student_select"><option value="">(loading…)</option></select>
+    <span id="student_count" class="muted"></span>
+    <button id="reloadStudents" type="button">Reload Students</button>
+    <button id="quickTest" type="button">Quick Test (first student)</button>
+  </div>
+
+  <div class="row">
+    <label><input type="radio" name="present" value="1" checked /> Present</label>
+    <label><input type="radio" name="present" value="0" /> Absent</label>
+    <button id="markBtn" type="button">Mark Attendance</button>
+  </div>
+
+  <h2>Records</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Date</th><th>Status</th></tr></thead>
+    <tbody id="att_list"></tbody>
+  </table>
+
+  <div id="debug" class="muted"></div>
+
+  <script>
+    const err = document.getElementById('err');
+    const dbg = document.getElementById('debug');
+    const attDate = document.getElementById('att_date');
+    const todayBtn = document.getElementById('todayBtn');
+    const studentSelect = document.getElementById('student_select');
+    const studentCount = document.getElementById('student_count');
+    const reloadBtn = document.getElementById('reloadStudents');
+    const quickTestBtn = document.getElementById('quickTest');
+    const markBtn = document.getElementById('markBtn');
+    const attList = document.getElementById('att_list');
+
+    function showError(m){ err.textContent=m; setTimeout(()=>err.textContent='',8000); }
+    function pad(n){ return String(n).padStart(2,'0'); }
+    function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+    function isValidDateStr(s){ return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(new Date(s).getTime()); }
+    function logDebug(obj){ dbg.textContent = typeof obj==='string' ? obj : JSON.stringify(obj,null,2); }
+
+    function forceEnableInputs(){
+      [attDate, studentSelect].forEach(el => { el.readOnly=false; el.disabled=false; el.style.pointerEvents='auto'; });
+    }
+
+    async function loadStudents(){
+      forceEnableInputs();
+      const res = await fetch('/api/students');
+      if(!res.ok){ showError('Load students failed'); return; }
+      const students = await res.json();
+      studentSelect.innerHTML = '';
+      if(!students.length){
+        studentSelect.innerHTML = '<option value="">(No students yet — add one on Students page)</option>';
+        studentCount.textContent = '0 loaded';
+      }else{
+        const first = document.createElement('option');
+        first.value = ''; first.textContent = '(Select a student)'; studentSelect.appendChild(first);
+        students.forEach(s=>{
+          const opt = document.createElement('option');
+          opt.value = s.id; // value = numeric ID; label shows NAME
+          opt.textContent = `${s.first_name} ${s.last_name}`;
+          studentSelect.appendChild(opt);
+        });
+        studentCount.textContent = `${students.length} loaded`;
+      }
+      return students;
+    }
+
+    async function loadAttendance(){
+      const d = attDate.value || todayStr();
+      if(!isValidDateStr(d)){ showError('Enter date as YYYY-MM-DD (e.g., '+todayStr()+')'); return; }
+      const res = await fetch('/api/attendance?date='+encodeURIComponent(d));
+      if(!res.ok){ showError('Load attendance failed'); return; }
+      const rows = await res.json();
+      attList.innerHTML='';
+      rows.forEach(r=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.first_name} ${r.last_name}</td><td>${r.date}</td><td>${r.present ? 'Present' : 'Absent'}</td>`;
+        attList.appendChild(tr);
+      });
+    }
+
+    async function submitAttendance(student_id, d, present){
+      const payload = { student_id, date:d, present };
+      logDebug({ POST:'/api/attendance', payload });
+      const res = await fetch('/api/attendance',{
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const text = await res.text().catch(()=> '');
+      logDebug({ status: res.status, response:text });
+      if(!res.ok){
+        showError('Mark failed: ' + (text || ('HTTP '+res.status)));
+      }else{
+        await loadAttendance();
+      }
+    }
+
+    todayBtn.onclick = () => { attDate.value = todayStr(); attDate.focus(); attDate.select(); loadAttendance(); };
+    reloadBtn.onclick = loadStudents;
+    studentSelect.addEventListener('focus', loadStudents); // if students were added elsewhere
+    markBtn.onclick = async () => {
+      const sid = studentSelect.value;
+      if(!sid) return showError('Pick a student (or add one first on Students page)');
+      const d = attDate.value || todayStr();
+      if(!isValidDateStr(d)) return showError('Enter date as YYYY-MM-DD (e.g., '+todayStr()+')');
+      const present = document.querySelector('input[name="present"]:checked').value === '1';
+      submitAttendance(sid, d, present);
+    };
+
+    // Quick sanity: mark today for the first loaded student
+    quickTestBtn.onclick = async () => {
+      const students = await loadStudents();
+      if(!students || !students.length) return showError('No students to test with');
+      studentSelect.value = students[0].id;
+      attDate.value = attDate.value || todayStr();
+      submitAttendance(students[0].id, attDate.value, true);
+    };
+
+    // type helper: 20250930 -> 2025-09-30
+    attDate.addEventListener('input', () => {
+      const v = attDate.value.replace(/[^\d]/g,'').slice(0,8);
+      let out = v;
+      if(v.length >= 5) out = v.slice(0,4)+'-'+v.slice(4,6)+(v.length>=7?('-'+v.slice(6,8)):'');
+      attDate.value = out;
+    });
+
+    // Init
+    attDate.value = todayStr();
+    attDate.addEventListener('change', loadAttendance);
+    forceEnableInputs();
+    loadStudents().then(loadAttendance);
+  </script>
+</body>
+</html>

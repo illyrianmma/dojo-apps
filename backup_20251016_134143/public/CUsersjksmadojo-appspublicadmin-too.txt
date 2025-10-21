@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin Tools</title>
+<style>body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px}input,select,button{padding:8px;margin:6px 0}</style>
+</head><body>
+<h1>Admin Tools</h1>
+<p>Enter your Admin Token to download a DB backup or export CSVs.</p>
+<label>Admin Token</label>
+<input type="password" id="tok" placeholder="ADMIN_TOKEN">
+<div>
+  <button id="bk">Download DB Backup</button>
+</div>
+<div>
+  <select id="tbl">
+    <option value="students">students</option>
+    <option value="payments">payments</option>
+    <option value="expenses">expenses</option>
+    <option value="leads">leads</option>
+    <option value="attendance">attendance</option>
+  </select>
+  <button id="csv">Export CSV</button>
+</div>
+<script>
+document.getElementById('bk').onclick = () => {
+  const t = document.getElementById('tok').value.trim();
+  if(!t) return alert('Enter token');
+  fetch('/admin/backup/db', { headers:{'x-admin-token':t} }).then(r=>{
+    if(!r.ok) return r.json().then(j=>{throw new Error(j.error||'error')});
+    return r.blob();
+  }).then(b=>{
+    const url = URL.createObjectURL(b); const a = document.createElement('a');
+    a.href = url; a.download = 'dojo.db'; a.click(); URL.revokeObjectURL(url);
+  }).catch(e=>alert(e.message));
+};
+document.getElementById('csv').onclick = () => {
+  const t = document.getElementById('tok').value.trim();
+  if(!t) return alert('Enter token');
+  const table = document.getElementById('tbl').value;
+  fetch('/admin/export/csv?table='+encodeURIComponent(table), { headers:{'x-admin-token':t} })
+    .then(r=>{ if(!r.ok) return r.json().then(j=>{throw new Error(j.error||'error')}); return r.blob();})
+    .then(b=>{
+      const url = URL.createObjectURL(b); const a = document.createElement('a');
+      a.href = url; a.download = table+'.csv'; a.click(); URL.revokeObjectURL(url);
+    })
+    .catch(e=>alert(e.message));
+};
+</script>
+<p><a href="/index.html">Back</a></p>
+</body></html>

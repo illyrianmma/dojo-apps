@@ -1,94 +1,138 @@
-﻿<!doctype html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Old Students â€” Dojo Apps</title>
-  <link rel="stylesheet" href="styles.css?v=1" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  
+  <meta charset="UTF-8" />
+  <title>Old Students (v20)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    #msg{display:none;margin:12px 0;padding:10px;border-radius:10px;border:1px solid}
+    #msg.ok{background:#e8f5e9;border-color:#c8e6c9}
+    #msg.err{background:#ffebee;border-color:#ffcdd2}
+    .student{display:grid;grid-template-columns:110px 1fr;gap:12px;align-items:start;padding:10px;border:1px solid #eee;border-radius:14px;margin:10px 0;position:relative;border-left:8px solid #9e9e9e;opacity:.96}
+    .student img{width:110px;height:110px;object-fit:cover;border-radius:12px;background:#f5f5f5}
+    .badge{font-size:.75rem;padding:2px 8px;border-radius:999px;border:1px solid #ddd;margin-left:8px}
+    .badge.ok{background:#e8f5e9;border-color:#c8e6c9}
+    .badge.soon{background:#fff8e1;border-color:#ffe082}
+    .badge.due{background:#e3f2fd;border-color:#90caf9}
+    .badge.over{background:#ffebee;border-color:#ffcdd2}
+    .small{font-size:.9rem;color:#555}
+    .payments{border-left:3px solid #eee;margin-left:8px;padding-left:8px;margin-top:8px}
+    .flash{animation:flash 2s ease-in-out 1}
+    @keyframes flash {0%{box-shadow:0 0 0 0 rgba(255,235,59,.9)} 100%{box-shadow:0 0 0 0 rgba(255,235,59,0)}}
+  </style>
 </head>
 <body>
-  <a class="back" href="/index.html">â¬… Back to Main</a>
-  <div class="top">
-    <h1>Old Students (Archived)</h1>
-    <input type="search" id="q" placeholder="Search name, phone, emailâ€¦" />
+  <div class="flex" style="margin:6px 0"><a class="card" href="index.html">⬅️ Back to Main</a></div><h1>Old Students (Archive) <span class="small">v20</span></h1>
+  <div class="flex" style="gap:8px;flex-wrap:wrap">
+    <a class="card" href="students.html">← Back to Students</a>
+    <span class="small">Color key: <span class="badge over">overdue</span> <span class="badge due">today</span> <span class="badge soon">1–7 days</span> <span class="badge ok">&gt;7 days</span></span>
   </div>
+  <div id="msg"></div>
+  <div class="hr"></div>
+  <div id="list"></div>
 
-  <table id="tbl">
-    <thead>
-      <tr>
-        <th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Join</th><th>Renewal</th><th>Status</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <script>
+    const $=s=>document.querySelector(s);
+    const msg=$("#msg");
+    function show(type, text){ msg.className=''; msg.classList.add(type==='error'?'err':'ok'); msg.textContent=text; msg.style.display='block'; }
+    const todayISO = ()=> new Date().toISOString().slice(0,10);
+    const daysBetween = (a,b)=>Math.round((new Date(b)-new Date(a))/86400000);
+    function badgeFor(renewal){
+      const t=todayISO(); const d=daysBetween(t, (renewal||t));
+      if(d>7) return {cls:"ok", text:`${d}d until`};
+      if(d>0) return {cls:"soon", text:`${d}d until`};
+      if(d===0) return {cls:"due", text:"due today"};
+      return {cls:"over", text:`${Math.abs(d)}d overdue`};
+    }
+    const api = {
+      list: ()=>fetch("/api/students?v="+Date.now(), {cache:"no-store"}).then(r=>r.json()),
+      update: (id,body)=>fetch("/api/students/"+id,{method:"PUT", body}).then(r=>r.json()),
+      del: id=>fetch("/api/students/"+id,{method:"DELETE"}).then(r=>r.json()),
+      payList: id=>fetch(`/api/students/${id}/payments`).then(r=>r.json()),
+      payAdd: (id,payload)=>fetch(`/api/students/${id}/payments`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json())
+    };
 
-<script>
-const state={rows:[],filtered:[]};
-function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function cardHTML(s){
+      const b=badgeFor(s.renewal_date || s.start_date || todayISO());
+      const img = s.picture_path? `<img src="${s.picture_path}" alt="photo">` : `<img alt="no photo">`;
+      return `
+        <div class="student" data-id="${s.id}">
+          ${img}
+          <div>
+            <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+              <strong>${(s.first_name||'').trim()} ${(s.last_name||'').trim()}</strong>
+              <span class="badge ${b.cls}">${b.text}</span>
+              <span class="small">payments: ${s.payment_count||0}</span>
+            </div>
+            <div class="small">${s.program||""} • ${s.phone||""} • ${s.email||""}</div>
+            <div class="small">${s.address||""}</div>
+            <div class="small">Parent: ${s.parents_name||s.parent_name||"-"} • Found us: ${s.referral_source||"-"}</div>
+            <div class="small">Joined: ${s.join_date||s.start_date||""} • Renewal: ${s.renewal_date||""}</div>
 
-async function load(){
-  // Prefer a dedicated endpoint if your server has /api/old-students.
-  // If not, fall back to /api/students and filter status === 'old'.
-  let arr=[];
-  try{
-    const r = await fetch('/api/old-students');
-    if(r.ok){ arr = await r.json(); }
-    else throw new Error('no /api/old-students');
-  }catch{
-    const r2 = await fetch('/api/students');
-    const all = await r2.json();
-    arr = all.filter(s => String(s.status||'').toLowerCase()==='old' || String(s.status||'').toLowerCase()==='archived');
-  }
-  state.rows = arr;
-  apply();
-}
+            <div class="flex" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+              <button data-a="restore">Restore to Students</button>
+              <button data-a="del">Delete</button>
+              <button data-a="pay">Payments</button>
+            </div>
 
-function apply(){
-  const q = (document.getElementById('q').value||'').toLowerCase().trim();
-  state.filtered = state.rows.filter(s=>{
-    const hay = [s.name,s.phone,s.email].map(x=>String(x||'').toLowerCase()).join(' ');
-    return !q || hay.includes(q);
-  });
-  render();
-}
+            <div class="payments" style="display:none"></div>
+          </div>
+        </div>`;
+    }
 
-function render(){
-  const tb = document.querySelector('#tbl tbody');
-  tb.innerHTML = state.filtered.map(s=>`
-    <tr data-id="${s.id}">
-      <td>${s.id}</td>
-      <td>${escapeHtml(s.name)}</td>
-      <td>${escapeHtml(s.phone||'')}</td>
-      <td>${escapeHtml(s.email||'')}</td>
-      <td>${escapeHtml((s.join_date||s.start_date||'').slice(0,10))}</td>
-      <td>${escapeHtml((s.renewal_date||'').slice(0,10))}</td>
-      <td>${escapeHtml(s.status||'old')}</td>
-      <td class="actions">
-        <button class="primary" onclick="restore(${s.id})">Restore</button>
-        <button class="danger" onclick="removeRow(${s.id})">Delete</button>
-      </td>
-    </tr>
-  `).join('') || `<tr><td colspan="8">No archived students.</td></tr>`;
-}
+    async function render(highlightId){
+      const data = await api.list();
+      const arr = Array.isArray(data) ? data : (data.value||[]);
+      const archived = arr.filter(s => (s.referral_source||"").toLowerCase()==="archived");
+      $("#list").innerHTML = archived.length ? archived.map(cardHTML).join("") : "<p class='small'>No archived students.</p>";
+      if (highlightId){
+        const el = document.querySelector('.student[data-id="'+highlightId+'"]');
+        el?.classList.add("flash");
+        el?.scrollIntoView({behavior:"smooth",block:"center"});
+      }
+    }
 
-async function restore(id){
-  if(!confirm('Restore this student to Active?')) return;
-  const r = await fetch('/api/students/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'active'})});
-  if(!r.ok){ alert('Restore failed'); return; }
-  await load();
-}
+    document.getElementById("list").addEventListener("click", async (e)=>{
+      const btn=e.target.closest("button"); if(!btn) return;
+      const card=e.target.closest(".student"); const id=card?.dataset.id; const a=btn.dataset.a;
 
-async function removeRow(id){
-  if(!confirm('Permanently DELETE this student?')) return;
-  const r = await fetch('/api/students/'+id,{method:'DELETE'});
-  if(!r.ok){ alert('Delete failed'); return; }
-  await load();
-}
+      if(a==="restore"){
+        const fd=new FormData(); fd.set("referral_source","");
+        const r = await api.update(id, fd);
+        if(r?.error){ show("error","Restore failed: "+r.error); return; }
+        // Leave this page and go back to Students
+        location.replace("students.html?restored="+encodeURIComponent(id));
+        return;
+      }
 
-document.getElementById('q').addEventListener('input', apply);
-load();
-</script>
+      if(a==="del"){
+        if(!confirm("Delete this student?")) return;
+        const r = await api.del(id);
+        if(r?.ok){ show("ok","Deleted."); render(); } else show("error","Delete failed");
+      }
+
+      if(a==="pay"){
+        const box = card.querySelector(".payments");
+        if(!box) return;
+        if(box.style.display!=="none"){ box.style.display="none"; return; }
+        const rows = await api.payList(id);
+        box.innerHTML = (rows||[]).map(p=>`
+          <div class="flex" style="gap:8px;align-items:center">
+            <strong>$${Number(p.amount).toFixed(2)}</strong>
+            <span>${p.date}</span>
+            <span class="small">• ${p.method||"-"} • ${p.note||""}</span>
+          </div>`).join("") || '<div class="small">No payments yet.</div>';
+        box.style.display="block";
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", ()=>{
+      const q = new URLSearchParams(location.search);
+      const just = q.get("justArchived");
+      render(just);
+    });
+  </script>
 </body>
 </html>
 
