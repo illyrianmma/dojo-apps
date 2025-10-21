@@ -22,17 +22,15 @@ function ensureCol(table, name, def, done){
   });
 }
 
-function serie(tasks, i=0, cb=()=>{}){
+function runSeries(tasks, i=0, cb=()=>{}){
   if (i>=tasks.length) return cb();
-  tasks[i](()=> serie(tasks, i+1, cb));
+  tasks[i](()=> runSeries(tasks, i+1, cb));
 }
 
 db.serialize(()=>{
-
-  // --- students: minimal table & expected columns ---
-  db.run(`CREATE TABLE IF NOT EXISTS students (
-    id INTEGER PRIMARY KEY
-  )`);
+  // Ensure tables exist (id only — safe)
+  db.run(`CREATE TABLE IF NOT EXISTS students (id INTEGER PRIMARY KEY)`);
+  db.run(`CREATE TABLE IF NOT EXISTS leads    (id INTEGER PRIMARY KEY)`);
 
   const studentCols = [
     ["first_name",      "first_name TEXT"],
@@ -46,31 +44,24 @@ db.serialize(()=>{
     ["referral_source", "referral_source TEXT"],
     ["join_date",       "join_date TEXT"],
     ["renewal_date",    "renewal_date TEXT"],
-    ["photo",           "photo TEXT"]
+    ["photo",           "photo TEXT"],
+    ["picture_path",    "picture_path TEXT"]  // <- NEW: fix your error
   ];
-
-  // --- leads: minimal table & expected columns ---
-  db.run(`CREATE TABLE IF NOT EXISTS leads (
-    id INTEGER PRIMARY KEY
-  )`);
 
   const leadCols = [
     ["name",              "name TEXT"],
     ["phone",             "phone TEXT"],
     ["email",             "email TEXT"],
     ["interested_program","interested_program TEXT"],
-    ["source",            "source TEXT"],          // used by your app
+    ["source",            "source TEXT"],
     ["follow_up_date",    "follow_up_date TEXT"],
     ["status",            "status TEXT"],
     ["notes",             "notes TEXT"]
   ];
 
   const tasks = [];
-
   studentCols.forEach(([n,def])=> tasks.push((next)=> ensureCol("students", n, def, next)));
   leadCols.forEach(([n,def])   => tasks.push((next)=> ensureCol("leads",    n, def, next)));
 
-  serie(tasks, 0, ()=>{
-    db.close(()=> process.exit(0));
-  });
+  runSeries(tasks, 0, ()=> db.close(()=> process.exit(0)));
 });
