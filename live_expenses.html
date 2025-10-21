@@ -1,0 +1,83 @@
+?<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Expenses V3 OK</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}
+    .num{text-align:right}
+    .card{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#fff}
+  </style>
+</head>
+<body>
+  <div class="flex" style="margin-bottom:10px">
+    <a class="card" href="index.html">?? Back to Main</a>
+  </div>
+  <h1>Expenses <small style="font-weight:normal;color:#666">V3 OK</small></h1>
+
+  <form id="expForm" class="grid" autocomplete="off">
+    <div><label>Vendor</label><input name="vendor" required /></div>
+    <div><label>Category</label><input name="category" placeholder="rent, utilities, supplies…" /></div>
+    <div><label>Date</label><input type="date" name="date" /></div>
+    <div><label>Amount</label><input name="amount" type="number" step="0.01" required /></div>
+    <div style="grid-column:1/-1"><label>Notes</label><input name="notes" /></div>
+    <div style="grid-column:1/-1" class="flex">
+      <button type="submit">Save Expense</button>
+      <button type="reset">Reset</button>
+    </div>
+  </form>
+
+  <h2 style="margin-top:14px">All Expenses</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+<script>
+const $=s=>document.querySelector(s);
+const fmt=a=> (a||0).toLocaleString(undefined,{style:'currency',currency:'CAD'});
+const api = {
+  list: ()=> fetch('/api/expenses').then(r=>r.json()),
+  create: (obj)=> fetch('/api/expenses',{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams(obj).toString()
+  }).then(r=>r.json())
+};
+async function render(){
+  const rows = await api.list();
+  const tb = $('#rows'); tb.innerHTML='';
+  (rows||[]).forEach(x=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${x.date||''}</td><td>${x.vendor||''}</td><td>${x.category||''}</td><td class="num">${fmt(+x.amount||0)}</td>`;
+    tb.appendChild(tr);
+  });
+}
+document.getElementById('expForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const obj = {
+    vendor:(fd.get('vendor')||'').trim(),
+    category:(fd.get('category')||'').trim(),
+    date:(fd.get('date')||'').trim(),
+    amount:(fd.get('amount')||'0').trim(),
+    notes:(fd.get('notes')||'').trim(),
+  };
+  const r = await api.create(obj);
+  if (r?.error) { alert('Save failed: '+r.error); return; }
+  e.target.reset(); await render();
+});
+window.addEventListener('DOMContentLoaded', render);
+</script>
+</body>
+</html>
+
+
+
