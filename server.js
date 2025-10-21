@@ -593,3 +593,8 @@ app.get("/api/debug/payments", (req,res)=>{
     res.json(rows||[]);
   });
 });
+/* alias: /api/accounting/summary -> /api/accounting/summary3 */
+app.get("/api/accounting/summary", (req,res)=>{
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect(307, "/api/accounting/summary3" + (qs?("?"+qs):""));
+});
