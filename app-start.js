@@ -1,11 +1,9 @@
-﻿const fs = require("fs");
-const path = require("path");
+﻿const fs = require('fs');
+const path = require('path');
 
-// Print the version marker loudly before starting the server
-const p = path.join(__dirname, "public", "VERSION.txt");
-let v = "(missing)";
-try { v = fs.readFileSync(p, "utf8"); } catch {}
-console.log("[dojo] VERSION:", v.trim());
+const verPath = path.join(__dirname, 'public', 'VERSION.txt');
+let ver = 'NO_VERSION_FILE';
+try { ver = fs.readFileSync(verPath, 'utf8').trim(); } catch {}
 
-// start your real app
-require("./server.js");
+console.log(`[dojo] VERSION: ${ver}`);
+require('./server.js');
