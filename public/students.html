@@ -89,6 +89,7 @@
   <h2>All Students</h2>
   <div id="students" class="students"></div>
 
+  <script src="student-notes.js"></script>
   <script>
     const $=s=>document.querySelector(s);
     const msg=$("#msg"), editBanner=$("#editBanner");
@@ -160,6 +161,7 @@
               <button data-a="pay">Payments</button>
             </div>
 
+            ${studentNotesHTML(s)}
             <div class="payments hidden"></div>
           </div>
         </div>`;

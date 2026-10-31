@@ -104,7 +104,8 @@
 
       <div style="grid-column:1 / -1">
         <label>Notes (internal)</label>
-        <textarea name="notes" rows="3" placeholder="Optional internal notes"></textarea>
+        <div id="notesHistory" class="small" style="white-space:pre-wrap;margin-bottom:8px"></div>
+        <textarea name="notes" rows="3" placeholder="Add a new note — previous notes are kept"></textarea>
       </div>
     </div>
 
@@ -136,6 +137,7 @@
 
 <script>
 const $=s=>document.querySelector(s);
+const escapeNote = value => String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const msg=$("#msg");
 function show(type, text){ msg.className=''; msg.classList.add(type==='error'?'err':'ok'); msg.textContent=text; msg.style.display='block'; }
 
@@ -205,7 +207,7 @@ function card(l){
     ['id', l.id], ['name', l.name||''], ['phone', l.phone||''], ['email', l.email||''],
     ['interested_program', l.interested_program||''], ['source', l.source||''],
     ['follow_up_date', l.follow_up_date||''], ['status', l.status||''], ['notes', l.notes||'']
-  ].map(([k,v])=>`data-${k}="${String(v??'').replace(/"/g,'&quot;')}"`).join(' ');
+  ].map(([k,v])=>`data-${k}="${escapeNote(v)}"`).join(' ');
 
   const statusText = (l.status && String(l.status).trim()) ? String(l.status).trim() : 'new';
   const sColor = statusColor(statusText);
@@ -225,7 +227,7 @@ function card(l){
       ${l.source? ' • Source: '+l.source : ''}
       ${l.follow_up_date? ' • Call-back: '+l.follow_up_date : ''}
     </div>
-    ${l.notes ? `<div class="small">Notes: ${l.notes}</div>` : ''}
+    ${l.notes ? `<div class="small" style="white-space:pre-wrap">Notes: ${escapeNote(l.notes)}</div>` : ''}
     <div class="flex" style="margin-top:8px">
       <button data-a="edit">Edit</button>
       <button data-a="del">Delete</button>
@@ -285,6 +287,7 @@ $('#leads').addEventListener('click', async (e)=>{
 
   if (a === 'edit') {
     const f = $('#leadForm'); f.reset();
+    $('#notesHistory').textContent = card.dataset.notes || 'No notes yet.';
     // Split name into first/family for editing convenience
     const full = (card.dataset.name||'').trim();
     const sp = full.split(/\s+/); const first = sp.shift()||''; const last = sp.join(' ');
@@ -319,7 +322,8 @@ $('#leads').addEventListener('click', async (e)=>{
         last_name:  last,
         phone:      card.dataset.phone || '',
         email:      card.dataset.email || '',
-        program:    program || ''
+        program:    program || '',
+        notes:      card.dataset.notes || ''
       });
 
       const resp = await fetch('/api/students', {
@@ -366,22 +370,23 @@ $('#leadForm').addEventListener('submit', async (e)=>{
     status: (fd.get('status')||'').trim() || 'new',
     // pack date_entered into notes to stay compatible with DB schema
     notes: (()=>{
-      const de = (fd.get('date_entered')||'').trim();
+      const de = id ? '' : (fd.get('date_entered')||'').trim();
       const extra = (fd.get('notes')||'').trim();
-      return (de ? `date_entered:${de}` : '') + (extra ? (de? ' ':'') + extra : '');
+      return (de ? `date_entered:${de}` : '') + (extra ? (de ? '\n' : '') + '[' + new Date().toISOString() + '] ' + extra : '');
     })()
   };
 
   const r = id ? await api.update(id, obj) : await api.create(obj);
   if (r?.error) return show('error','Save failed: '+r.error);
   show('ok', id ? 'Updated.' : 'Saved.');
+  $('#notesHistory').textContent='';
   e.target.reset(); e.target.querySelector('[name="id"]').value='';
   // default date_entered after reset
   $('#date_entered').value = ymd(new Date());
   await load();
 });
 
-$('#resetBtn').onclick = ()=>{ const f=$('#leadForm'); f.reset(); f.querySelector('[name="id"]').value=''; $('#date_entered').value = ymd(new Date()); msg.style.display='none'; };
+$('#resetBtn').onclick = ()=>{ const f=$('#leadForm'); f.reset(); $('#notesHistory').textContent=''; f.querySelector('[name="id"]').value=''; $('#date_entered').value = ymd(new Date()); msg.style.display='none'; };
 $('#todayBtn').onclick = ()=>{ const d=new Date(); $('#follow_up_date').value = ymd(d); show('ok','Call-back set to today'); };
 $('#plus7Btn').onclick = ()=>{ const d=new Date(); d.setDate(d.getDate()+7); $('#follow_up_date').value = ymd(d); show('ok','Call-back set to +7 days'); };
 
