@@ -32,6 +32,7 @@
   <div class="hr"></div>
   <div id="list"></div>
 
+  <script src="student-notes.js"></script>
   <script>
     const $=s=>document.querySelector(s);
     const msg=$("#msg");
@@ -76,6 +77,7 @@
               <button data-a="pay">Payments</button>
             </div>
 
+            ${studentNotesHTML(s)}
             <div class="payments" style="display:none"></div>
           </div>
         </div>`;

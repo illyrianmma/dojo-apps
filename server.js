@@ -63,7 +63,7 @@ const run = (sql, p=[]) => new Promise((res, rej)=>db.run(sql, p, function(e){ e
 const all = (sql, p=[]) => new Promise((res, rej)=>db.all(sql, p, (e,r)=>e?rej(e):res(r)));
 const get = (sql, p=[]) => new Promise((res, rej)=>db.get(sql, p, (e,r)=>e?rej(e):res(r)));
 
-(async () => {
+const notesReady = (async () => {
   await run(`
     CREATE TABLE IF NOT EXISTS students (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,7 +130,33 @@ const get = (sql, p=[]) => new Promise((res, rej)=>db.get(sql, p, (e,r)=>e?rej(e
       notes TEXT
     )
   `);
-})().catch(e=>console.error("Migration error:", e));
+  // Take a consistent, persistent snapshot before adding the notes column.
+  const columns = await all('PRAGMA table_info(students)');
+  const backup = DB_PATH + '.before-notes-v1.bak';
+  if (!fs.existsSync(backup)) {
+    await run('VACUUM INTO ?', [backup]);
+    console.log('[dojo] Notes backup:', backup);
+  }
+  if (!columns.some(c => c.name === 'notes')) {
+    await run('ALTER TABLE students ADD COLUMN notes TEXT');
+  }
+})();
+notesReady.catch(e => console.error("Notes initialization failed:", e));
+
+// Note-only writes never update a student's other information.
+app.post('/api/students/:id/notes', async (req, res) => {
+  try {
+    await notesReady;
+    const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
+    if (!note) return res.status(400).json({error:'Enter a note.'});
+    const entry = '[' + new Date().toISOString() + '] ' + note;
+    const result = await run(`UPDATE students SET notes =
+      CASE WHEN COALESCE(notes, '') = '' THEN ? ELSE notes || char(10) || char(10) || ? END
+      WHERE id = ?`, [entry, entry, req.params.id]);
+    if (!result.changes) return res.status(404).json({error:'Student not found'});
+    res.json(await get('SELECT * FROM students WHERE id=?', [req.params.id]));
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
 
 // Helpers
 const todayISO = ()=> new Date().toISOString().slice(0,10);
@@ -157,6 +183,7 @@ app.get("/api/students/:id", async (req,res)=>{
 });
 app.post("/api/students", upload.single("picture"), async (req,res)=>{
   try{
+    await notesReady;
     const b = req.body;
     if(!b.first_name || !b.last_name) return res.status(400).json({error:"first_name and last_name are required"});
     const join = b.join_date?.trim() || todayISO();
@@ -164,9 +191,9 @@ app.post("/api/students", upload.single("picture"), async (req,res)=>{
     const pic = req.file ? `/uploads/${path.basename(req.file.path)}` : null;
 
     const r = await run(`
-      INSERT INTO students (first_name,last_name,phone,email,address,age,parents_name,program,referral_source,picture_path,join_date,renewal_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    `,[b.first_name,b.last_name,b.phone,b.email,b.address,(b.age===""?null:b.age),b.parents_name,b.program,b.referral_source,pic,join,renewal]);
+      INSERT INTO students (first_name,last_name,phone,email,address,age,parents_name,program,referral_source,picture_path,join_date,renewal_date,notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `,[b.first_name,b.last_name,b.phone,b.email,b.address,(b.age===""?null:b.age),b.parents_name,b.program,b.referral_source,pic,join,renewal,b.notes||null]);
 
     const created = await get(`SELECT * FROM students WHERE id=?`, [r.lastID]);
     res.status(201).json(created);
@@ -383,6 +410,7 @@ app.post("/api/leads", async (req,res)=>{
 });
 app.put("/api/leads/:id", async (req,res)=>{
   try{
+    await notesReady;
     const { name, phone, email, interested_program, source, follow_up_date, status, notes } = req.body;
     await run(`
       UPDATE leads SET
@@ -393,9 +421,11 @@ app.put("/api/leads/:id", async (req,res)=>{
         source=COALESCE(?, source),
         follow_up_date=COALESCE(?, follow_up_date),
         status=COALESCE(?, status),
-        notes=COALESCE(?, notes)
+        notes=CASE WHEN ? IS NULL OR ? = COALESCE(notes, '') THEN notes
+          WHEN COALESCE(notes, '') = '' THEN ?
+          ELSE notes || char(10) || char(10) || ? END
       WHERE id=?
-    `,[name||null, phone||null, email||null, interested_program||null, source||null, follow_up_date||null, status||null, notes||null, req.params.id]);
+    `,[name||null, phone||null, email||null, interested_program||null, source||null, follow_up_date||null, status||null, notes||null, notes||null, notes||null, notes||null, req.params.id]);
     res.json(await get(`SELECT * FROM leads WHERE id=?`, [req.params.id]));
   }catch(e){ res.status(500).json({error:e.message});}
 });
